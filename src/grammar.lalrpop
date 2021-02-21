@@ -1,0 +1,390 @@
+// LALRPOP grammar for the VM front-end.
+//
+// Adapted from that found in the `amath` crate, with heavy additions.
+// https://github.com/vpzomtrrfrt/amath/blob/master/src/grammar.lalrpop
+
+use crate::ast;
+use crate::ast::Node;
+use std::str::FromStr;
+
+
+grammar;
+
+
+// Program Entry Point
+pub Program
+    = "Version" ":" "1.0" ";" <Statement*>;
+
+
+// Statement entry point.
+pub Statement: ast::Statement = {
+    FuncDef,
+    ProcDef,
+    TypeDef,
+    Effect,
+    Let,
+    EffectExpr,
+    Iteration,
+}
+
+
+// Expression entry point.
+pub Expr: ast::Expr = {
+    Block,
+    SimpleExpr,
+}
+
+
+// Type Entry Point
+pub Type: ast::TypeTag = TypeExpr;
+
+
+// XXX: NOTES FOR LATER:
+//
+// basic type is the "value set"
+//
+// List and Map are implicitly List<Any>, Map<Any>, so we can model
+// them as primitive values.
+//
+// two ways to define a primitive value set:
+// explicit: {a, b, c}
+// implicit, with predicate: {x: Int | 0 < x and x < a}, {x: String | x.startswith("x")}
+//
+// higher kinded types:
+// types can be bound to names with `typedef`
+// type-level functions: take type arguments, return a type constructor
+// x: [Int] => x: {x: List | i: Int for i in x}
+//
+// all types model a set of values
+// record types are just a set of "fields", same runtime representation as map.
+// record types can be widened with "+", extension syntax is just sugar for this.
+// record types can have methods defined on them, these are compiled and resolved statically.
+// 
+
+
+// Syntactic sugar for Union(a, b)
+pub TypeExpr: ast::TypeTag = {
+    <a:TypeExpr> "|" <b:TypeCons> => ast::union(a, b),
+    // If we had a Sum type, it would go here, and would look like this.
+    //<a:TypeExpr> "+" <b:TypeCons> => ast::TypeTag::Sum(Node::new(a), Node::new(b)),
+    <TypeCons>   "?"              => ast::TypeTag::Option(Node::new(<>)),
+    TypeCons
+}
+
+
+// Record types
+pub Record: ast::TypeTag
+    = "{" <members:Semicolon<Member>> "}"
+    => ast::TypeTag::Record(ast::to_alist(members));
+
+
+// Application of a type-level function: a type constructor.
+pub TypeCons: ast::TypeTag = {
+    <cons:TypeCons> "<" <types:Comma<Type>> ">"
+    	=> ast::TypeTag::TypeCons(ast::Node::new(cons), ast::to_seq(types)),
+    TypeTerm
+}
+
+
+// A primitive type, or a grouping of subtypes.
+pub TypeTerm: ast::TypeTag = {
+    "Void"                      => ast::TypeTag::Void,
+    "Bool"                      => ast::TypeTag::Bool,
+    "Int"                       => ast::TypeTag::Int,
+    "Float"                     => ast::TypeTag::Float,
+    "Str"                       => ast::TypeTag::Str,
+    "Point"                     => ast::TypeTag::Point,
+    <TypeName>                  => ast::TypeTag::TypeName(<>.to_string()),
+    "(" <Type> ")"              => <>,
+    "<" <items:Comma<Type>> ">" => ast::TypeTag::Tuple(ast::to_seq(items)),
+    "[" <items:Type> "]"        => ast::TypeTag::List(ast::Node::new(items))
+}
+
+
+// Any field in a record type.
+pub Member: (String, ast::Member) = {
+    "field" <name:Id> ":" <t:Type>
+	=> (name, ast::Member::Field(ast::Node::new(t))),
+    "method" <name:Id> <args:Arglist> "->" <ret:Type> "=" <body:Expr>
+	=> (name, ast::Member::Method(args, Node::new(ret), Node::new(body))),
+    "const" <name:Id> ":" <t:Type> "=" <value:Expr>
+	=> (name, ast::Member::StaticValue(ast::Node::new(value))),
+    "static" <name:Id> <args:Arglist> "->" <ret:Type> "=" <body:Expr>
+	=> (name, ast::Member::StaticMethod(args, Node::new(ret), Node::new(body)))
+}
+
+
+// Syntactic sugar for defining a function returning a value.
+FuncDef: ast::Statement
+    = "fn" <name:Id> <args:Arglist> "->" <ret:Type> <body:Block>
+    => ast::def(name.as_str(), ast::lambda(args, ret, body));
+
+
+// Syntatic sugar for defining a function which returns no value.
+ProcDef: ast::Statement
+    = "proc" <name:Id> <args:Arglist> <body:Block>
+    => ast::def(name.as_str(), ast::lambda(args, ast::TypeTag::Void, body));
+
+
+// Syntactic sugar for defining a template function.
+//
+// This is desugared to an extra function arg that is folded into the
+// argument list, allowing `delegate` to be in-scope within the
+// template's body.
+//
+// Templates can be called with the TemplateCall syntax, which
+// consumes a trailing block. This allows defining library functions
+// which feel like control structures.
+TemplateDef: ast::Statement
+    = "template" <name:Id> <args:Arglist> "using" <delegate:Id> <body:Block>
+    => ast::def(name.as_str(), ast::template(args, delegate.as_str(), body));
+
+
+// The only way to introduce a type binding
+TypeDef: ast::Statement
+    = "type" <name:TypeName> ":" <t:Type>
+    => ast::typedef(name.as_str(), t);
+
+
+// Used for raw cairo operations.
+Effect: ast::Statement
+    = "out" <name:Id> <exprs:ExprList> ";"
+    => ast::emit(name.as_str(), exprs);
+
+
+// Bind a name to a value.
+Let: ast::Statement
+    = "let" <name:Id> "=" <value:Expr> ";"
+    => ast::def(name.as_str(), value);
+
+
+// An expression evaluated for its side effects in a statement context.
+//
+// To keep the LALRPOP happy, this is a subset of expressions.
+EffectExpr: ast::Statement = {
+    <Cond> => ast::expr_for_effect(<>),
+    TemplateCall,
+}
+
+
+// Iterate over a collection.
+Iteration: ast::Statement = {
+    "for" <name:Id> "in" <list:Expr> <body:Block>
+	=> ast::list_iter(name.as_str(), list, ast::expr_for_effect(body)),
+    "for" "(" <key:Id> "," <value:Id> ")" "in" <map:Expr> <body:Block>
+	=> ast::map_iter(
+	    key.as_str(),
+	    value.as_str(),
+	    map,
+	    ast::expr_for_effect(body)
+	)
+}
+
+
+// Any expression which is not a Block.
+//
+// Needed to avoid the abiguity of nesting blocks.
+SimpleExpr: ast::Expr = {
+    Lambda,
+    Cond,
+    Logic,
+}
+
+
+// An if-else chain
+Cond: ast::Expr
+    = "if"
+      <first:CondClause>
+      <rest:("elif" <CondClause>)*>
+      <default:("else" <Block>)?>
+    => {
+        let mut clauses = vec!{first};
+        clauses.extend(rest);
+        ast::cond(clauses, default.unwrap_or(ast::Expr::Void))
+    }
+;
+
+
+// Single clause in an if-else chain
+CondClause: (ast::Expr, ast::Expr) = {
+    "(" <pred: Expr> ")" <body: Block>
+        => (pred, body),
+}
+
+
+// Single paramater in a function signature
+Param: (String, ast::TypeTag) =
+    <name:Id> ":" <t:Type> => (name, t);
+
+
+// The argument list of a function signature
+Arglist: ast::AList<ast::TypeTag> =
+    "(" <args:Comma<Param>> ")" => ast::to_alist(args);
+
+
+// An anonymous function expression.
+Lambda: ast::Expr
+    = <args:Arglist> <ret:("->" <Type>)?> "=" <body:Expr>
+    => ast::lambda(
+	args,
+	ret.unwrap_or(ast::TypeTag::Void),
+	body
+    );
+
+
+// A sequence of statements treated as an expression.
+//
+// If the `yield` keyword is present, then this block has a value.
+Block: ast::Expr = {
+    "{" <stmts:Statement+> <ret:("yield" <SimpleExpr>)?> "}"
+        => ast::expr_block(stmts, ret.unwrap_or(ast::Expr::Void)),
+    "{" <ret:("yield" <SimpleExpr>)> "}" => ret,
+}
+
+
+// Expression entry point anow, this is the logic operators. This way
+// sloppily-parenthesized logic hould do the least surprising thing.
+Logic: ast::Expr = {
+    <a:Logic> "and" <b:Rel> => ast::bin(ast::BinOp::And, a, b),
+    <a:Logic> "or"  <b:Rel> => ast::bin(ast::BinOp::Or, a, b),
+    <a:Logic> "xor" <b:Rel> => ast::bin(ast::BinOp::Xor, a, b),
+    Rel
+}
+
+
+// Relational operators are the next highest precedence.
+Rel: ast::Expr = {
+    <a:Rel> "<"  <b:Sum> => ast::bin(ast::BinOp::Lt, a, b),
+    <a:Rel> ">"  <b:Sum> => ast::bin(ast::BinOp::Gt, a, b),
+    <a:Rel> "<=" <b:Sum> => ast::bin(ast::BinOp::Lte, a, b),
+    <a:Rel> ">=" <b:Sum> => ast::bin(ast::BinOp::Gte, a, b),
+    <a:Rel> "==" <b:Sum> => ast::bin(ast::BinOp::Eq, a, b),
+    Sum
+};
+
+
+// 
+Sum: ast::Expr = {
+    <a:Sum> "+" <b:Factor> => ast::bin(ast::BinOp::Add, a, b),
+    <a:Sum> "-" <b:Factor> => ast::bin(ast::BinOp::Sub, a, b),
+    Factor,
+};
+
+
+Factor: ast::Expr = {
+    <a:Factor> "*" <b:Exp> => ast::bin(ast::BinOp::Mul, a, b),
+    <a:Factor> "/" <b:Exp> => ast::bin(ast::BinOp::Div, a, b),
+    Exp
+};
+
+
+Exp: ast::Expr = {
+    <base:Exp> "^" <exp: InvTerm> => ast::bin(ast::BinOp::Pow, base, exp),
+    InvTerm
+}
+
+
+// We want these unary operators applied to a function call to do the
+// right thing. I.e. -foo() should parse as (- (foo)), not ((- foo)).
+//
+// The same thing applies to logical negation.
+InvTerm: ast::Expr = {
+    "-" <a:InvTerm> => ast::un(ast::UnOp::Neg, a),
+    "not" <a:InvTerm> => ast::un(ast::UnOp::Not, a),
+    Call
+};
+
+
+// Allow a function call to consume a trailing block in a statement context.
+//
+// Concept Inspired by OpenScad and Ruby. The block just gets folded
+// into the arguments.
+//
+// To simplify the grammar, templates are assumed not to return a
+// value and are purely used for their effects.
+TemplateCall: ast::Statement = {
+    <func:Selection> "(" <args:ExprList> ")" <delegate:Block>
+	=> ast::template_call(func, args, delegate),
+    <func:Selection> "(" <args:ExprList> ")" ";"
+        => ast::expr_for_effect(ast::call(func, args))
+};
+
+
+// We want indexing and selection to bind before function calls, so that
+// foo.bar(a) parses as ((dot foo bar) a), not (dot foo (bar a))
+Call: ast::Expr = {
+    <func:Call> "(" <args:ExprList> ")" => ast::call(func, args),
+    Selection
+}
+
+
+// XXX: Would like to allow an arbitrary expression to apear LHS
+// without parens; however, this results in ambiguity that LALRPOP
+// can't handle.
+Selection: ast::Expr = {
+    <obj:Selection> "." <id:Id> => ast::dot(obj, id.as_str()),
+    <obj:Selection> "[" <e:Expr> "]" => ast::index(obj, e),
+    Term
+}
+
+
+// Literals of any type except lambdas.
+Term: ast::Expr = {
+    Id => ast::Expr::Id(<>),
+    Int => ast::Expr::Int(<>),
+    Float => ast::Expr::Float(<>),
+    Str => ast::Expr::Str(<>),
+    Boolean => ast::Expr::Bool(<>),
+    "(" <a:Expr> ")" => a,
+    "[" <l:ExprList> "]" => ast::list(l),
+    "{" <m:MapItems> "}" => ast::map(m),
+};
+
+
+// A single item in a map.
+MapItem: (String, ast::Expr) = {
+    <k:Str> ":" <v:Logic> => (k, v)
+}
+
+
+// Any commma-separated list of values.
+ExprList = Comma<Expr>;
+
+
+// So far only used in maps.
+MapItems = Comma<MapItem>;
+
+
+// Comma-separated lists of things.
+Comma<T>: Vec<T> = {
+    <v:(<T> ",")*> <e:T?> => match e {
+        None => v,
+        Some(e) => {
+            let mut v = v;
+            v.push(e);
+            v
+        }
+    }
+}
+
+
+// Semicolon-separated lists of things.
+Semicolon<T>: Vec<T> = {
+    <v:(<T> ";")*> <e:T?> => match e {
+        None => v,
+        Some(e) => {
+            let mut v = v;
+            v.push(e);
+            v
+        }
+    }
+}
+
+
+// Terminals
+Int: i64 = r"-?[0-9]+" => i64::from_str(<>).unwrap();
+Float: f64 = r"-?[0-9]+\.[0-9]+" => f64::from_str(<>).unwrap();
+Id: String = r"[a-z_][A-Za-z0-9_]*" => <>.to_owned();
+TypeName: String = r"[A-Z][A-Za-z0-9_]*" => <>.to_owned();
+Boolean: bool = {"true" => true, "false" => false};
+Str: String = <s:r#""(([^\\"]|\\.)*)""#> => s[1..(s.len() - 1)].to_string();
