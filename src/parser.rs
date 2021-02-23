@@ -253,9 +253,9 @@ mod tests {
 
     #[test]
     fn test_simple_statement() {
-        assert_statement("fill <- ;", emit("fill", vec!{}));
+        assert_statement("out fill;", emit("fill", vec!{}));
         assert_statement(
-            "moveto <- x, y;",
+            "out moveto x, y;",
             emit("moveto", vec!{id("x"), id("y")})
         );
 
@@ -277,7 +277,7 @@ mod tests {
             bin(Mul, id("y"), Int(4))
         ));
 
-        assert_parses_to("{debug <- x; yield x}", expr_block(
+        assert_parses_to("{out debug x; yield x}", expr_block(
             vec!{emit("debug", vec!{id("x")})},
             id("x")
         ));
@@ -301,14 +301,14 @@ mod tests {
     #[test]
     fn test_list_iter() {
         let test = r#"
-              for i in x {
-                  moveto <- i, i;
-                  circle <- 50.0;
+              for p in points {
+                  out moveto p;
+                  out circle 50.0;
               }
         "#;
 
-        assert_statement(test, list_iter("i", id("x"), statement_block(vec!{
-            emit("moveto", vec!{id("i"), id("i")}),
+        assert_statement(test, list_iter("p", id("points"), statement_block(vec!{
+            emit("moveto", vec!{id("p")}),
             emit("circle", vec!{Float(50.0)})
         })));
     }
@@ -318,10 +318,9 @@ mod tests {
     fn test_map_iter() {
         let test = r#"
               for (k, v) in x {
-                  moveto <- v, v;
-                  text <- k;
+                  out moveto v, v;
+                  out text k;
               }
-
         "#;
 
         assert_statement(test, map_iter("k", "v", id("x"), statement_block(vec!{
@@ -333,7 +332,7 @@ mod tests {
     #[test]
     fn test_if() {
         assert_statement(
-            "if (a) { text <- b; }",
+            "if (a) { out text b; }",
             guard(
                 vec!{(id("a"), emit("text", vec!{id("b")}))},
                 None
@@ -344,7 +343,7 @@ mod tests {
     #[test]
     fn test_if_else() {
         assert_statement(
-            r#"if (a) { text <- b; } else { text <- "error"; }"#,
+            r#"if (a) { out text b; } else { out text "error"; }"#,
             guard(
                 vec!{(id("a"), emit("text", vec!{id("b")}))},
                 Some(emit("text", vec!{string("error")}))
@@ -356,11 +355,11 @@ mod tests {
     fn test_if_elif_else() {
         assert_statement(
             r#"if (a) {
-               text <- "a";
+               out text "a";
             } elif (b) {
-               text <- "b";
+               out text "b";
             } else {
-               text <- "error";
+               out text "error";
             }"#,
             guard(
                 vec!{
@@ -373,13 +372,13 @@ mod tests {
 
         assert_statement(
             r#"if (a) {
-               text <- "a";
+               out text "a";
             } elif (b) {
-               text <- "b";
+               out text "b";
             } elif (c) {
-               text <- "c";
+               out text "c";
             } else {
-               text <- "error";
+               out text "error";
             }"#,
             guard(
                 vec!{
@@ -396,9 +395,9 @@ mod tests {
     fn test_if_elif() {
         assert_statement(
             r#"if (a) {
-               text <- "a";
+               out text "a";
             } elif (b) {
-               text <- "b";
+               out text "b";
             }"#,
             guard(
                 vec!{
@@ -411,11 +410,11 @@ mod tests {
 
         assert_statement(
             r#"if (a) {
-               text <- "a";
+               out text "a";
             } elif (b) {
-               text <- "b";
+               out text "b";
             } elif (c) {
-               text <- "c";
+               out text "c";
             }"#,
             guard(
                 vec!{
@@ -429,7 +428,7 @@ mod tests {
     }
 
     fn anon(statements: Vec<Statement>) -> Expr {
-        lambda(vec!{}, TypeTag::Unit, expr_block(statements, Expr::Unit))
+        lambda(vec!{}, TypeTag::Void, expr_block(statements, Expr::Void))
     }
 
     fn tree(
@@ -448,7 +447,7 @@ mod tests {
         ));
 
         assert_statement(
-            "foo() { paint <-;}",
+            "foo() { out paint;}",
             tree(id("foo"), vec!{}, vec!{emit("paint", vec!{})})
         );
 
@@ -479,26 +478,26 @@ mod tests {
     #[test]
     fn test_lambda_expr() {
         assert_parses_to(
-            "() {}",
-            lambda(vec!{}, TypeTag::Unit, map(vec!{}))
+            "() = {}",
+            lambda(vec!{}, TypeTag::Void, map(vec!{}))
         );
 
         assert_parses_to(
-            "() 4",
-            lambda(vec!{}, TypeTag::Unit, Int(4))
+            "() = 4",
+            lambda(vec!{}, TypeTag::Void, Int(4))
         );
 
 
         assert_parses_to(
-            "() -> Int 4",
+            "() -> Int = 4",
             lambda(vec!{}, TypeTag::Int, Int(4))
         );
 
         assert_parses_to(
-            "() {let x = 4; yield x}",
+            "() = {let x = 4; yield x}",
             lambda(
                 vec!{},
-                TypeTag::Unit,
+                TypeTag::Void,
                 expr_block(
                     vec!{def("x", Int(4))},
                     id("x")
@@ -507,18 +506,21 @@ mod tests {
         );
 
         assert_parses_to(
-            "(x: Int, y: Int) -> Int x * y",
+            "(x: Int, y: Int) -> Int = x * y",
             lambda(
-                vec!{(s("x"), TypeTag::Int), (s("y"), TypeTag::Int)},
+                to_alist(vec!{
+		    (s("x"), TypeTag::Int),
+		    (s("y"), TypeTag::Int)
+		}),
                 TypeTag::Int,
                 bin(Mul, id("x"), id("y"))
             )
         );
 
         assert_parses_to(
-            "(x: Int) -> Int 4",
+            "(x: Int) -> Int = 4",
             lambda(
-                vec!{(s("x"), TypeTag::Int)},
+                to_alist(vec!{(s("x"), TypeTag::Int)}),
                 TypeTag::Int,
                 Int(4)
             )
@@ -532,22 +534,24 @@ mod tests {
             r#"func foo(y: Int) -> Int {yield 4 * y}"#,
             def(
                 "foo",
-                lambda(vec!{(s("y"), TypeTag::Int)},
-                       TypeTag::Int,
-                       bin(Mul, Int(4), id("y")))
+                lambda(
+		    to_alist(vec!{(s("y"), TypeTag::Int)}),
+                    TypeTag::Int,
+                    bin(Mul, Int(4), id("y"))
+		)
             )
         );
 
         assert_statement(
             r#"proc foo(y: Int) {
-               paint <-;
+               out paint;
             }"#,
             def(
                 "foo",
                 lambda(
-                    vec!{(s("y"), TypeTag::Int)},
-                    TypeTag::Unit,
-                    expr_block(vec!{emit("paint", vec!{})}, Expr::Unit)
+                    to_alist(vec!{(s("y"), TypeTag::Int)}),
+                    TypeTag::Void,
+                    expr_block(vec!{emit("paint", vec!{})}, Expr::Void)
                 )
             )
         );

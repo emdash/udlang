@@ -480,7 +480,7 @@ mod tests {
                 "foo" => Int(42),
                 "bar" => Str(string!("baz")),
                 "quux" => List(list! {Int(1), Int(2), Int(3)})
-            }), Ok(Map(map! {
+            }), Ok(MapExpr(map! {
                 "foo" => Int,
                 "bar" => Str,
                 "quux" => List(node! {Int})
@@ -524,13 +524,13 @@ mod tests {
     #[test]
     fn test_dot() {
         assert_types_to!(
-            env! {"x" => Map(map! {"foo" => Str})},
+            env! {"x" => MapExpr(map! {"foo" => Str})},
             Dot(node! {Id(string! {"x"})}, string! {"foo"}),
             Ok(Str)
         );
 
         assert_types_to!(
-            env! {"x" => Map(map! {"foo" => Str})},
+            env! {"x" => MapExpr(map! {"foo" => Str})},
             Dot(node! {Id(string! {"x"})}, string! {"bar"}),
             Err(KeyError(map! {"foo" => Str}, string! {"bar"}))
         );
@@ -542,7 +542,7 @@ mod tests {
         );
 
         assert_types_to!(
-            env! {"x" => Map(map! {"foo" => Map(map! {"bar" => Int})})},
+            env! {"x" => MapExpr(map! {"foo" => MapExpr(map! {"bar" => Int})})},
             Dot(
                 node! {
                     Dot(
@@ -558,7 +558,7 @@ mod tests {
         );
 
         assert_types_to!(
-            env! {"x" => Map(map! {"foo" => Map(map! {"bar" => Int})})},
+            env! {"x" => MapExpr(map! {"foo" => MapExpr(map! {"bar" => Int})})},
             Dot(
                 node! {
                     Dot(
@@ -605,7 +605,7 @@ mod tests {
     #[test]
     fn test_map_iter() {
         let tc = TypeChecker::new(
-            env!{"x" => TypeTag::Map(map!{"x" => Str})}
+            env!{"x" => TypeTag::MapExpr(map!{"x" => Str})}
         );
 
         let statement = node! {map_iter(
@@ -637,7 +637,7 @@ mod tests {
         assert_types_to!(
             env!{},
             lambda(
-                vec!{(s("x"), TypeTag::Int)},
+                to_alist(vec!{(s("x"), TypeTag::Int)}),
                 TypeTag::Int,
                 bin(Add, id("x"), Expr::Int(4))
             ),

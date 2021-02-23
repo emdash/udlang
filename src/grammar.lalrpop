@@ -12,8 +12,8 @@ grammar;
 
 
 // Program Entry Point
-pub Program
-    = "Version" ":" "1.0" ";" <Statement*>;
+// pub Program: ast::Seq<ast::Statement>
+//    = "Version" ":" "1.0" ";" <Statement*>;
 
 
 // Statement entry point.
@@ -116,7 +116,7 @@ pub Member: (String, ast::Member) = {
 
 // Syntactic sugar for defining a function returning a value.
 FuncDef: ast::Statement
-    = "fn" <name:Id> <args:Arglist> "->" <ret:Type> <body:Block>
+    = "func" <name:Id> <args:Arglist> "->" <ret:Type> <body:Block>
     => ast::def(name.as_str(), ast::lambda(args, ret, body));
 
 
