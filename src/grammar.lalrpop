@@ -10,10 +10,34 @@ use std::str::FromStr;
 
 grammar;
 
+// TODO: features required for MVP
+//
+// import
+// export
+// match expressions over unions
+// parameter definitions
+// record constructors
+// track source location in Node type
+// friendly-ish error messages
+// comments
+// ensure proper unicode support in string literals.
+// parse to complete Program, incl. version string.
+// Fix the lambda syntax, I am not quite liking () = {} for a nop lambda.
+// Meta: put all this stuff into an issue tracker.
+//
+// TODO: Nice to haves:
+//
+// type-level functions
+// elide types in lambdas
+// existential / quantifier / "contract" types.
+// _ placeholder for partial evaluation
+// 
+
+
 
 // Program Entry Point
-// pub Program: ast::Seq<ast::Statement>
-//    = "Version" ":" "1.0" ";" <Statement*>;
+pub Program: Vec<ast::Statement>
+    = "Version" ":" ".1-alpha" ";" <Statement*>;
 
 
 // Statement entry point.
@@ -46,7 +70,7 @@ pub Type: ast::TypeTag = TypeExpr;
 // List and Map are implicitly List<Any>, Map<Any>, so we can model
 // them as primitive values.
 //
-// two ways to define a primitive value set:
+// Two ways to define a primitive value set:
 // explicit: {a, b, c}
 // implicit, with predicate: {x: Int | 0 < x and x < a}, {x: String | x.startswith("x")}
 //
@@ -59,7 +83,6 @@ pub Type: ast::TypeTag = TypeExpr;
 // record types are just a set of "fields", same runtime representation as map.
 // record types can be widened with "+", extension syntax is just sugar for this.
 // record types can have methods defined on them, these are compiled and resolved statically.
-// 
 
 
 // Syntactic sugar for Union(a, b)
@@ -70,12 +93,6 @@ pub TypeExpr: ast::TypeTag = {
     <TypeCons>   "?"              => ast::TypeTag::Option(Node::new(<>)),
     TypeCons
 }
-
-
-// Record types
-pub Record: ast::TypeTag
-    = "{" <members:Semicolon<Member>> "}"
-    => ast::TypeTag::Record(ast::to_alist(members));
 
 
 // Application of a type-level function: a type constructor.
@@ -95,10 +112,17 @@ pub TypeTerm: ast::TypeTag = {
     "Str"                       => ast::TypeTag::Str,
     "Point"                     => ast::TypeTag::Point,
     <TypeName>                  => ast::TypeTag::TypeName(<>.to_string()),
+    <Record>                    => <>,
     "(" <Type> ")"              => <>,
     "<" <items:Comma<Type>> ">" => ast::TypeTag::Tuple(ast::to_seq(items)),
     "[" <items:Type> "]"        => ast::TypeTag::List(ast::Node::new(items))
 }
+
+
+// Record types
+pub Record: ast::TypeTag
+    = "{" <members:Semicolon<Member>> "}"
+    => ast::TypeTag::Record(ast::to_alist(members));
 
 
 // Any field in a record type.
@@ -108,7 +132,7 @@ pub Member: (String, ast::Member) = {
     "method" <name:Id> <args:Arglist> "->" <ret:Type> "=" <body:Expr>
 	=> (name, ast::Member::Method(args, Node::new(ret), Node::new(body))),
     "const" <name:Id> ":" <t:Type> "=" <value:Expr>
-	=> (name, ast::Member::StaticValue(ast::Node::new(value))),
+	=> (name, ast::Member::StaticValue(Node::new(t), ast::Node::new(value))),
     "static" <name:Id> <args:Arglist> "->" <ret:Type> "=" <body:Expr>
 	=> (name, ast::Member::StaticMethod(args, Node::new(ret), Node::new(body)))
 }
@@ -142,7 +166,7 @@ TemplateDef: ast::Statement
 
 // The only way to introduce a type binding
 TypeDef: ast::Statement
-    = "type" <name:TypeName> ":" <t:Type>
+    = "type" <name:TypeName> ":" <t:Type> ";"
     => ast::typedef(name.as_str(), t);
 
 
@@ -263,7 +287,6 @@ Rel: ast::Expr = {
 };
 
 
-// 
 Sum: ast::Expr = {
     <a:Sum> "+" <b:Factor> => ast::bin(ast::BinOp::Add, a, b),
     <a:Sum> "-" <b:Factor> => ast::bin(ast::BinOp::Sub, a, b),
@@ -343,7 +366,8 @@ Term: ast::Expr = {
 
 // A single item in a map.
 MapItem: (String, ast::Expr) = {
-    <k:Str> ":" <v:Logic> => (k, v)
+    <k:Str> ":" <v:Logic> => (k, v),
+    <k:Id> ":" <v:Logic> => (k, v)
 }
 
 

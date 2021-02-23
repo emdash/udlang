@@ -2,8 +2,54 @@ use std::collections::HashMap;
 use std::rc::Rc;
 use std::ops::Deref;
 
+// TODO for MVP:
+//
+// - make self / self explicit
+// - Sync with all MVP changes from grammar.lalrpop.
+// - Use a NotNan type in place of f64.
+// - Implement hash and partial_ord for type/expr.
+// - Implement scheme to cache AST nodes where possible.
+// - sort out the effect system.
+//
+// TODO / Nice To have / To Investigate.
+//
+// - How might macros help?
+// - Could a custom derive macro help?
+// - Look for other crates in the LALRPOP ecosystem.
+// - Study other grammars to see how they handle it.
+// - looking at the typelift crate, how might that simplify?
+//
+// Issues
+//
+// The chief paint point here is that enum variants are not types in
+// their own right. This is the root of the following problems.
+//
+// - (1) The need pick a concrete container like Box<> or Rc<> in recursive ADTs.
+// - (2) There's no type-safe way to refer to an enum's discriminant.
+// - (3) The proliferation Node::new() and related helpers like to_seq, to_alist()
+//       makes the code less readable, and makes tests harder to write
+//       and even harder to read.
+//
+// The question is how to factor things using either:
+// - the trait system and conversions like Into
+// - an external crate with some novel paradigm
+// - custom macros
+// - custom procedural macros
+//
+// Such that the need for a wrapper API is diminished, and both the
+// grammar and the tests have as little syntactic noise as
+// possible. Meanwhile, we want the memory management details factored
+// out so that we're free to change later. And we want to do all this
+// without imposing too much runtime overhead.
+
 
 // Abstract over various memory management strategies.
+//
+// Simplest solution to (1) above: we define a Node type and related
+// containers. This allows us to change strategies, though a lot of
+// code will probably break if the API doesn't look like `std::Box` or
+// `sd::Rc`. Things to try might be like a pool allocator, for
+// example, where memory would be tied to an instance.
 pub type Node<T> = Rc<T>;
 pub type Seq<T> = Vec<Node<T>>;
 pub type AList<T> = Vec<(String, Node<T>)>;
@@ -102,7 +148,7 @@ pub enum TypeTag {
 pub enum Member {
     Field(Node<TypeTag>),
     Method(AList<TypeTag>, Node<TypeTag>, Node<Expr>),
-    StaticValue(Node<Expr>),
+    StaticValue(Node<TypeTag>, Node<Expr>),
     StaticMethod(AList<TypeTag>, Node<TypeTag>, Node<Expr>)
 }
 
