@@ -27,7 +27,7 @@ For a more detaled discussion of uDlang's design, see `manual.md`.
 
 What started as an attempt to write a quick-and-dirty DSL for uDash,
 another project of mine, snowballed into a deep dive into compilers,
-type theory, and the Rust programming language. 
+type theory, and the Rust programming language.
 
 My hope is that all this effort will prove generally useful to others.
 
@@ -49,9 +49,9 @@ into legible HTML. Let's say our JSON payload looks like this:
   "name": "Brandon's Tasks"
   "items": [
     {"id": 0, "name": "Get prescriptions", "status": "complete"},
-	{"id": 1, "name": "Schedule doctor's appointment", "status": "incomplete"},
-	{"id": 2, "name": "Get gravel for driveway", "status": "blocked", "blocker": 3},
-	{"id": 3, "name": "Get truck bed-liner installed"}
+    {"id": 1, "name": "Schedule doctor's appointment", "status": "incomplete"},
+    {"id": 2, "name": "Get gravel for driveway", "status": "blocked", "blocker": 3},
+    {"id": 3, "name": "Get truck bed-liner installed"}
   ]
 }
 ```
@@ -72,8 +72,8 @@ import html.{_, html, head, title, body, h1, h2, ul, li, div, text};
 // Define the type of a single todo-list item.
 // Type names must start with an upper-case letter.
 type TodoItem: {
-  id: Int, 
-  name: Str, 
+  id: Int,
+  name: Str,
   status: "complete" |  "incomplete" | "blocked";
   // Blocker is an optional field.
   blocker?: Int;
@@ -90,14 +90,14 @@ proc format_item(item: TodoItem) {
   // The item's status is appended directly to the element's class.
   li({class: "todo-item ${item.status}"}) {
     text(item.name);
-    // ? is the *existential* operator, which returns true if an optional 
-	// field is present. An optional field *must* be tested for existence.
-	if (item.blocker?) {
-	   let blocker = items[item.blocker];
-	   div({class: "alert"}) {
-  	     text("Blocked on ${blocker.name}");
-	   };
-	}
+    // ? is the *existential* operator, which returns true if an optional
+    // field is present. An optional field *must* be tested for existence.
+    if (item.blocker?) {
+       let blocker = items[item.blocker];
+       div({class: "alert"}) {
+           text("Blocked on ${blocker.name}");
+       };
+    }
   };
 };
 
@@ -116,13 +116,13 @@ html() {
 
    body() {
      h1() {text(name)};
-	 div({class: "todo-list"}) {
-	   ul() {
-	     for item in items {
-	       format_item(item);
-	     };
-	   };
-	 };
+     div({class: "todo-list"}) {
+       ul() {
+         for item in items {
+           format_item(item);
+         };
+       };
+     };
    };
 };
 ```
@@ -130,15 +130,15 @@ html() {
 Let's run this example:
 
  `$ udlang todo.md < example.json`
- 
+
 We obtain the following output:
 
  <TBD>
- 
+
 Now let's try it again on some invalid input:
 
  <TBD>
- 
+
 ## Going Deeper ##
 
 We've seen that uDLang can serve as an HTML template engine, but it is
@@ -178,7 +178,7 @@ template element(tag: Str, attrs?: Map) using children {
   suppose (children()) {
     out ">";
     out ...;
-	out "</${tag}>";
+    out "</${tag}>";
   } otherwise {
     out "/>";
   };
@@ -215,8 +215,8 @@ export br = element("div", $) {};
  - Curly-brace syntax friendly to a mainstream audience, and compatible with JSON.
  - Expressive type system that models real-world data.
     - Strong typing with generics.
-	- HKT
-	- ADTs
+    - HKT
+    - ADTs
  - String interpolation.
  - Absolutely no mutable state allowed. Period.
  - Principled system for managing side-effects.
