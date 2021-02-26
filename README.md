@@ -180,7 +180,7 @@ template element(tag: Str, attrs?: Map) using children {
   // the elipsis in the final output.
   suppose (children()) {
     out ">";
-    out ...;
+    ...;
     out "</${tag}>";
   } otherwise {
     out "/>";
@@ -279,3 +279,14 @@ Command-line tool:
  - native support for text formats like JSON, as well as binary formats msgpack.
  - optimized binary framing protocol for efficient operation in "release mode".
  - powerful debugging facilities.
+
+## Project Status ##
+
+uDLang is in its infancy, (i.e. vaporware). If the ideas behind uDLang exite you, contributions are welcome. If you don't know where to start, consider submitting test cases or example scripts.
+
+ - [] Grammar: incomplete
+ - [] Runtime: to be ported from uDashbord
+ - [] Codegen: non-existent.
+ - [] Typechecker: very rough
+ - [] Command line tool: non-existent.
+ 
