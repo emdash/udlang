@@ -40,6 +40,7 @@ uDLang has many sources of inspiration, in addition to those already listed:
 - ML-family languages.
 - JavaScript, and its data-oriented subset, JSON.
 - JSON Schema
+- CDL, the most minimal approach to language design I have yet encountered, and well worth pondering.
 
 ## A Simple Example ##
 
