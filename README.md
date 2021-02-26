@@ -83,7 +83,7 @@ type TodoItem: {
 };
 
 // Declare the shape of the input.
-input {name: Str, items: [TodoItem]};
+input {field name: Str; field items: [TodoItem]};
 
 // Declare the output type, which is defined by the HTML helper library.
 output html.Output;
