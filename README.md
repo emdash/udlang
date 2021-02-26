@@ -5,7 +5,7 @@ uDLang is a pure functional language with *practical* applications.
 It supports creating efficient *filters*: small programs which operate
 on structured data.
 
-uDLang is both a stand-alone language as well as concrete command-line
+uDLang is both an embeddable DSL, as well as a stand-alone command-line
 tool for stream processing.
 
 In a nutshell, uDLang is an alternative to traditional pipeline
