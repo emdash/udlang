@@ -75,11 +75,11 @@ import html.{_, html, head, title, body, h1, h2, ul, li, div, text};
 // Define the type of a single todo-list item.
 // Type names must start with an upper-case letter.
 type TodoItem: {
-  id: Int,
-  name: Str,
-  status: "complete" |  "incomplete" | "blocked";
-  // Blocker is an optional field.
-  blocker?: Int;
+  field id: Int,
+  field name: Str,
+  field status: "complete" |  "incomplete" | "blocked";
+  // Blocker is an optional field, as opposed to a field with an option value.
+  field? blocker: Int;
 };
 
 // Declare the shape of the input.
