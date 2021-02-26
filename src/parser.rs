@@ -582,12 +582,12 @@ mod tests {
     #[test]
     fn test_type_record_complex() {
 	let dist = Member::Method(
-	    to_alist(vec!{(s("other"), TypeTag::TypeName(s("Self")))}),
+	    to_alist(vec!{(s("other"), TypeTag::This)}),
 	    Node::new(TypeTag::Float),
 	    Node::new(expr_block(
 		vec!{
-		    def("dx", bin(Sub, dot(id("self"), "x"), dot(id("other"), "x"))),
-		    def("dy", bin(Sub, dot(id("self"), "y"), dot(id("other"), "y"))),
+		    def("dx", bin(Sub, dot(This, "x"), dot(id("other"), "x"))),
+		    def("dy", bin(Sub, dot(This, "y"), dot(id("other"), "y"))),
 		
 		},
 		call(
@@ -601,12 +601,13 @@ mod tests {
 		)
 	    ))
 	);
+    
 	let from_polar = Member::StaticMethod(
 	    to_alist(vec!{
 		(s("r"), TypeTag::Float),
 		(s("theta"), TypeTag::Float)}
 	    ),
-	    Node::new(TypeTag::TypeName(s("Self"))),
+	    Node::new(TypeTag::This),
 	    Node::new(map(vec!{
 		(s("x"), bin(Mul, id("r"), call(id("cos"), vec! {id("theta")}))),
 		(s("y"), bin(Mul, id("r"), call(id("sin"), vec! {id("theta")})))
@@ -614,7 +615,7 @@ mod tests {
 	);
 
 	let origin = Member::StaticValue(
-	    Node::new(TypeTag::TypeName(s("Self"))),
+	    Node::new(TypeTag::This),
 	    Node::new(map(vec!{
 		(s("x"), Float(0.0)),
 		(s("y"), Float(0.0))
