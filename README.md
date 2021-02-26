@@ -1,0 +1,252 @@
+# uDLang #
+
+uDLang is a pure functional language with *practical* applications.
+
+It supports creating efficient *filters*: small programs which operate
+on structured data.
+
+uDLang is both a stand-alone language as well as concrete command-line
+tool for stream processing.
+
+In a nutshell, uDLang is an alternative to traditional pipeline
+filters like `awk`, `sed`, and `perl` that is:
+- record-oriented, like `jq`, rather than line-oriented, like `awk` or
+  `sed`.
+- clear and readable, rather than terse and cryptic.
+- strongly, statically typed.
+- purely functional.
+- designed with security and performance in mind.
+
+uDLang models operations on structured data in the abstract,
+independent of a specific wire format. Anything goes, so long as it
+isomorphic to JSON.
+
+For a more detaled discussion of uDlang's design, see `manual.md`.
+
+## Why uDLang ##
+
+What started as an attempt to write a quick-and-dirty DSL for uDash,
+another project of mine, snowballed into a deep dive into compilers,
+type theory, and the Rust programming language. 
+
+My hope is that all this effort will prove generally useful to others.
+
+uDLang has many sources of inspiration, in addition to those already listed:
+- FlowJS, for the syntax and semantics of type annotations.
+- OilShell, another project bringing a modern approach to a traditional domain.
+- ML-family languages.
+- JavaScript, and its data-oriented subset, JSON.
+- JSON Schema
+
+## A Simple Example ##
+
+Let's imagine that we are writing a todo-list web-application. As part
+of this, we want to convert a JSON payload received from a web service
+into legible HTML. Let's say our JSON payload looks like this:
+
+```
+{
+  "name": "Brandon's Tasks"
+  "items": [
+    {"id": 0, "name": "Get prescriptions", "status": "complete"},
+	{"id": 1, "name": "Schedule doctor's appointment", "status": "incomplete"},
+	{"id": 2, "name": "Get gravel for driveway", "status": "blocked", "blocker": 3},
+	{"id": 3, "name": "Get truck bed-liner installed"}
+  ]
+}
+```
+
+A uDLang filter to render the todo list into html might look like this:
+
+```
+// todo.ud
+
+// uDLang is evolving, by mandating a version string, we guard our code
+// against breaking changes to the language.
+version: 0.1-pre_mvp;
+
+// Import some helper functions from our html companion library (see below), as well
+// as the library itself.
+import html.{_, html, head, title, body, h1, h2, ul, li, div, text};
+
+// Define the type of a single todo-list item.
+// Type names must start with an upper-case letter.
+type TodoItem: {
+  id: Int, 
+  name: Str, 
+  status: "complete" |  "incomplete" | "blocked";
+  // Blocker is an optional field.
+  blocker?: Int;
+};
+
+// Declare the shape of the input.
+input {name: Str, items: [TodoItem]};
+
+// Declare the output type, which is defined by the HTML helper library.
+output html.Output;
+
+// Helper function to format single item in our list.
+proc format_item(item: TodoItem) {
+  // The item's status is appended directly to the element's class.
+  li({class: "todo-item ${item.status}"}) {
+    text(item.name);
+    // ? is the *existential* operator, which returns true if an optional 
+	// field is present. An optional field *must* be tested for existence.
+	if (item.blocker?) {
+	   let blocker = items[item.blocker];
+	   div({class: "alert"}) {
+  	     text("Blocked on ${blocker.name}");
+	   };
+	}
+  };
+};
+
+// Format the entire document. As with many scripting languages, there is no
+// specific program entry point, such as a function named `main`.
+//
+// All allusions to HTML syntax here (`head`, `body`, etc) are uDLang
+// functions living in the helper library.
+//
+// uDLang supports a "template" syntax for calling functions with trailing block, 
+// a feature borrowed from Ruby.
+html() {
+   head() {
+     title() {text(name);};
+   };
+
+   body() {
+     h1() {text(name)};
+	 div({class: "todo-list"}) {
+	   ul() {
+	     for item in items {
+	       format_item(item);
+	     };
+	   };
+	 };
+   };
+};
+```
+
+Let's run this example:
+
+ `$ udlang todo.md < example.json`
+ 
+We obtain the following output:
+
+ <TBD>
+ 
+Now let's try it again on some invalid input:
+
+ <TBD>
+ 
+## Going Deeper ##
+
+We've seen that uDLang can serve as an HTML template engine, but it is
+neither limited to, nor primarily intended for, this purpose. The
+`html` module is simply user library written in udlang itself. 
+
+To get a feel for the power and simplicity of uDLang, let's explore
+the `html` library:
+
+```
+// html.ud
+version: 0.1-pre_mvp;
+
+// Declare the output type for this library.
+type Output: Str;
+
+// Converts a string to an html-escaped format, implementation omitted for brevity.
+func quote(text: Str) -> Str = { /* ... */ };
+
+// A template allows flexible composition of functions that produce side-effects.
+// Here, the `using` syntax is just sugar for binding `children` to a closure 
+// argument. The `template` keyword is intended mainly as hint for linters.
+template element(tag: Str, attrs?: Map) using children {
+  // Begin by writing the opening tag.
+  out "<${tag} ";
+  
+  // Append any attributes to the output.
+  for attr, value in attrs {
+    out "${quote(attr)}=${quote(value)}";
+  }
+  
+  // uDLang supports a back-tracking mechanism called a *subjunctive*.
+  //
+  // Here it is used to cleanly handle the syntax for empty HTML elements.
+  // The side effects caused by evaluating `children()` will appear in the position of 
+  // the elipsis in the final output.
+  suppose (children()) {
+    out ">";
+    out ...;
+	out "</${tag}>";
+  } otherwise {
+    out "/>";
+  };
+};
+
+// Make this template definition available to importing scripts.
+export Output;
+export element;
+
+// With this general definition of an HTML element in hand, we can specialize it for
+// standard tags. uDLang supports *partial function application* via the wildcard operator.
+export html = element("html", $, $);
+export head = element("head", $, $);
+export body = element("body", $, $);
+export div = element("div", $, $);
+
+// Here we supply an empty block to prevent callers from accidentally
+// including children.
+export br = element("div", $) {};
+// ... remaining elements elided for brevity.
+
+```
+## Language Design Goals ##
+
+ - Make decades of academic research available for practical use.
+ - Wrap functional semantics in a "mainstream" syntax.
+ - Type-safe handling of strucured data.
+ - Abstract away low-level details.
+ - Allow for efficient execution via interpretation, ahead-of-time
+   compilation, or JIT.
+ 
+## Language Features ##
+
+ - Curly-brace syntax friendly to a mainstream audience, and compatible with JSON.
+ - Expressive type system that models real-world data.
+    - Strong typing with generics.
+	- HKT
+	- ADTs
+ - String interpolation.
+ - Absolutely no mutable state allowed. Period.
+ - Principled system for managing side-effects.
+ - Templates.
+ - Semantics allowing for deep analysis and optimization.
+ 
+uDLang is in its infancy. If you would like to contribute to its
+design, specification, or reference implementation, feel free to
+submit an issue.
+
+## Reference Implementation Goals ##
+
+Core
+
+ - small, maintainable library written in entirely in safe Rust.
+ - easily embedded in an application context.
+ - low interpreter overhead.
+ - predictable resource usage.
+ - fast interpreter startup time.
+ - limited optimizations:
+   - inlining
+   - const-folding
+   - CSE
+ - for now, focus on correctness over speed.
+  - develop comprehensive test suite.
+
+Command-line tool:
+
+ - targets for the most common use case for uDLang as a unix pipeline filter.
+ - can flexibly switch between different encodings and memory management strategies.
+ - native support for text formats like JSON, as well as binary formats msgpack.
+ - optimized binary framing protocol for efficient operation in "release mode".
+ - powerful debugging facilities.
