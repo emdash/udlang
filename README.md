@@ -23,6 +23,9 @@ isomorphic to JSON.
 
 For a more detaled discussion of uDlang's design, see `manual.md`.
 
+**uDLang is a work in progress, not all features documented here are
+implemented**.
+
 ## Why uDLang ##
 
 What started as an attempt to write a quick-and-dirty DSL for uDash,
@@ -133,11 +136,11 @@ Let's run this example:
 
 We obtain the following output:
 
- <TBD>
+**TBD**
 
 Now let's try it again on some invalid input:
 
- <TBD>
+ **TBD**
 
 ## Going Deper ##
 
