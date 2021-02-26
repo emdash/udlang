@@ -1,8 +1,6 @@
 // Mostly just a place to hold the unit tests for the grammar. The
 // actual parser is just a wrapper around what LALRPOP has generated for us.
 //
-// XXX: Currently incomplete.
-// 
 // The eventual goal here would be to have exhaustive coverage of the
 // entire grammar: i.e. each variant of each production, with overlap
 // from higher levels to make sure that even odd usages parse as expected.
@@ -268,15 +266,15 @@ mod tests {
             )
         );
 
-        // XXX: allow parsing foo()[3] identically. For now, language
-        // won't support returning function values, only passing them,
-        // so this is okay.
+        // XXX: see issue #8 in github
+	// assert_expr("foo()[3]", index(call(id("foo"), vec!{}), Int(3)));
+	// assert_expr("foo()bar", index(dot(id("foo"), vec!{}), "bar"));
+
         assert_expr(
             "(foo())[3]",
             index(call(id("foo"), vec!{}), Int(3))
         );
 
-        // XXX: see above.
         assert_expr(
             "(foo()).bar",
             dot(call(id("foo"), vec!{}), "bar")
@@ -702,6 +700,6 @@ mod tests {
 
     // Tests for edge cases and regressions
     
-    // XXX: So far there are none.
+    // So far there are none.
 }
 

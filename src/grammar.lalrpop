@@ -10,30 +10,6 @@ use std::str::FromStr;
 
 grammar;
 
-// TODO: features required for MVP
-//
-// import
-// export
-// match expressions over unions
-// parameter definitions
-// record constructors
-// track source location in Node type
-// friendly-ish error messages
-// comments
-// ensure proper unicode support in string literals.
-// parse to complete Program, incl. version string.
-// Fix the lambda syntax, I am not quite liking () = {} for a nop lambda.
-// Meta: put all this stuff into an issue tracker.
-//
-// TODO: Nice to haves:
-//
-// type-level functions
-// elide types in lambdas
-// existential / quantifier / "contract" types.
-// _ placeholder for partial evaluation
-// 
-
-
 
 // Program Entry Point
 pub Program: Vec<ast::Statement>
@@ -61,28 +37,6 @@ pub Expr: ast::Expr = {
 
 // Type Entry Point
 pub Type: ast::TypeTag = TypeExpr;
-
-
-// XXX: NOTES FOR LATER:
-//
-// basic type is the "value set"
-//
-// List and Map are implicitly List<Any>, Map<Any>, so we can model
-// them as primitive values.
-//
-// Two ways to define a primitive value set:
-// explicit: {a, b, c}
-// implicit, with predicate: {x: Int | 0 < x and x < a}, {x: String | x.startswith("x")}
-//
-// higher kinded types:
-// types can be bound to names with `typedef`
-// type-level functions: take type arguments, return a type constructor
-// x: [Int] => x: {x: List | i: Int for i in x}
-//
-// all types model a set of values
-// record types are just a set of "fields", same runtime representation as map.
-// record types can be widened with "+", extension syntax is just sugar for this.
-// record types can have methods defined on them, these are compiled and resolved statically.
 
 
 // Syntactic sugar for Union(a, b)
@@ -342,9 +296,7 @@ Call: ast::Expr = {
 }
 
 
-// XXX: Would like to allow an arbitrary expression to apear LHS
-// without parens; however, this results in ambiguity that LALRPOP
-// can't handle.
+// XXX: see github issue #13
 Selection: ast::Expr = {
     <obj:Selection> "." <id:Id> => ast::dot(obj, id.as_str()),
     <obj:Selection> "[" <e:Expr> "]" => ast::index(obj, e),
