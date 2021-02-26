@@ -111,14 +111,14 @@ proc format_item(item: TodoItem) {
 // a feature borrowed from Ruby.
 html() {
    head() {
-     title() {text(name);};
+     title() {text(in.name);};
    };
 
    body() {
-     h1() {text(name)};
+     h1() {text(in.name)};
      div({class: "todo-list"}) {
        ul() {
-         for item in items {
+         for item in in.items {
            format_item(item);
          };
        };

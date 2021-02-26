@@ -33,8 +33,8 @@ over its runtime environment, though in certain processing modes, the
 runtime may decide to terminate in response to the behavior of a
 uDLang kernel.
 
-The exact shape of the input accepted by a uDLang kernel is specified
-through the use of `param` definitions.
+The exact shape of the input accepted and the output produced are
+specified by `input` and `output` delcarations, respectively.
 
 ## Side Effects ##
  
@@ -131,7 +131,7 @@ a field `scale` might be be a string keyword, a scalar, or a vector
 quantity. This can be expressed as follows:
 
 ```
-record Style {
+type Style: {
   // ... 
   field scale: "default" | Float | Point;
   // ...
@@ -166,9 +166,14 @@ predicates.
 
 `type EvenInt: {x: Int | x % 2 == 0}`
 
+We might, for example, be able to expose the guts of the type-checker
+in a way that simplifies deriving new types from existing types, or that
+allows enforcing complex invariants at compile-time.
+
 In some ways this feature is inspired by C++ *concepts*, which are
 basically form of compile-time programming.
 
+Stay tuned.
 
 ## Templates ##
 
@@ -202,7 +207,7 @@ future if it doesn't lead to ambiguities in the grammar.
 
 Subjunctives are a mechanism to ease the composition of templates by
 simplifying the handling of a common edge-case: output that depends on
-whether a tree node is empty.
+whether a tree node is a leaf or a branch.
 
 More precisely, the subjunctive allows branching based on whether or
 not a sub-expression produces output, which may or may not be
@@ -252,3 +257,33 @@ suppose (she_may_love_you()) {
   }
 };
 ```
+
+This works even when the subunctive status can't be determined statically:
+
+```
+output Str;
+input Bool;
+
+proc she_may_love_you(love_is_real: bool) {
+  if (love_is_real) {
+    out "Yeah!";
+  }
+}
+
+suppose (she_may_love_you(in)) {
+  out "She loves you!";
+  repeat 3 {
+    out " ";
+	...;
+  }
+} otherwise {
+  out "Yesterday ...\n all my troubles seemed so faaaaar awayyyyy!";
+};
+```
+
+With this example `echo true | udlang --input json love.ud` outputs "She loves you!
+Yeah! Yeah! Yeah!", while `echo false | udlang --input json love.ud` outputs the
+opening lines to "Yesterday".
+
+While it may seem like magic, it's not: it's possible precisely
+because uDLang embraces pure, functional semantics.
