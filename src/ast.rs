@@ -116,6 +116,8 @@ pub enum TypeTag {
     Point,
     // The top type.
     Any,
+    // The `Self` keyword, but we can't call it that
+    This,
     // A bound type name.
     TypeName(String),
     // A type which may be None.
@@ -162,6 +164,7 @@ pub enum Expr {
     Float(f64),
     Str(String),
     Point(f64, f64),
+    This, // the lowercase `self` keyword, but we can't call it that.
     List(Seq<Expr>),
     Map(Map<Expr>),
     Id(String),

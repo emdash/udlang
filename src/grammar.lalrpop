@@ -111,6 +111,7 @@ pub TypeTerm: ast::TypeTag = {
     "Float"                     => ast::TypeTag::Float,
     "Str"                       => ast::TypeTag::Str,
     "Point"                     => ast::TypeTag::Point,
+    "Self"                      => ast::TypeTag::This,                    
     <TypeName>                  => ast::TypeTag::TypeName(<>.to_string()),
     <Record>                    => <>,
     "(" <Type> ")"              => <>,
@@ -353,6 +354,7 @@ Selection: ast::Expr = {
 
 // Literals of any type except lambdas.
 Term: ast::Expr = {
+    "self" => ast::Expr::This,
     Id => ast::Expr::Id(<>),
     Int => ast::Expr::Int(<>),
     Float => ast::Expr::Float(<>),

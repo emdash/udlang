@@ -110,6 +110,7 @@ impl TypeChecker {
             Expr::Float(_)           => Ok(Node::new(TypeTag::Float)),
             Expr::Str(_)             => Ok(Node::new(TypeTag::Str)),
             Expr::Point(_, _)        => Ok(Node::new(TypeTag::Point)),
+	    Expr::This               => self.eval_this(),
             Expr::List(items)        => self.eval_list(items),
             Expr::Map(items)         => self.eval_map(items),
             Expr::Id(name)           => self.eval_id(name),
@@ -122,6 +123,10 @@ impl TypeChecker {
             Expr::Call(func, args)   => self.eval_call(func, args),
             Expr::Lambda(args, ret, body) => self.eval_lambda(args, ret, body)
         }
+    }
+
+    pub fn eval_this(&self) -> TypeExpr {
+	Err(TypeError::NotImplemented)
     }
 
     pub fn eval_list(&self, items: &Seq<Expr>) -> TypeExpr {
