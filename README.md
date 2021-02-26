@@ -139,7 +139,7 @@ Now let's try it again on some invalid input:
 
  <TBD>
 
-## Going Deeper ##
+## Going Deper ##
 
 We've seen that uDLang can serve as an HTML template engine, but it is
 neither limited to, nor primarily intended for, this purpose. The
@@ -201,6 +201,32 @@ export br = element("div", $) {};
 // ... remaining elements elided for brevity.
 
 ```
+
+## Side Effects ##
+ 
+At this point, you might be asking yourself: if uDLang is
+*functional*, then why does this example feel so imperative? And
+what's all this noise about *side-effects* in the comments?
+
+The essence of so-called *functional* programming is less about the
+use of functions, and more about the *absence of state* and the
+careful management of *side-effects*. The design of uDLang simply does
+not allow for mutable state to exist within the program.
+
+Side effects are an unavoidable consequence of programming in the real
+world. uDLang makes no attempt to hide them: instead, uDLang *models*
+side-effects as *data*.  Since these side-effects are, in fact, just
+data to be consumed downstream, they cannot influence the behavior of
+the uDLang script itself, with one important exception.
+
+This means that all functions in uDLang are pure functions, even those
+evaluated purely for the output they produce.
+
+The output of a uDLang program is merely the concatenation of the
+side-effects it computes.
+
+For more information, see `manual.md`.
+
 ## Language Design Goals ##
 
  - Make decades of academic research available for practical use.

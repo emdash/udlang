@@ -1,9 +1,43 @@
+# Technical Details #
+
+A program in uDLang defines a *kernel* -- a piece of code executed on
+a single input *record* to produce arbitrary output. This kernel may
+be executed once on a single record. Or, it may be executed repeatedly
+to batch process an entire file. Or, it maybe executed continuously to
+process a stream of realtime-data. Anything goes, so long as the data
+can be segmented into records of a well-defined type.
+
+A uDLang environment exposes *no* mutable global state to the running
+script whatsoever. All state is contained entirely within the input
+*record*.
+
+The lifecycle of a uDLang program is as follows:
+- compile: the input source is parsed, type-checked, and converted an
+  optimized representation. This can take place at ahead of time, or
+  immediately after startup.
+- load: a compiled program is loaded into the memory of an embedding
+  environment.
+- init: one-time initialization may optionally take place, the result
+  of which is re-used between exec phases.
+- read: a frame is consumed from an input file descriptor, and
+  deserialized into memory as a record.
+- exec: the kernel is allowed to run to completion with the record
+  given as input. the kernel may emit one or more "side effects" as
+  output.
+- present: the side effects are collected, and presented on the output
+  file descriptor.
+
+The sequence of read, exec, present repeats indefinitely, until the
+runtime environment terminates. a uDLang kernel has no direct control
+over its runtime environment, though in certain processing modes, the
+runtime may decide to terminate in response to the behavior of a
+uDLang kernel.
+
+The exact shape of the input accepted by a uDLang kernel is specified
+through the use of `param` definitions.
+
 ## Side Effects ##
  
-At this point, you might be asking yourself: if uDLang is
-*functional*, what does this example seem to be imperative? And what's
-all this noise about *side-effects* in the comments?
-
 Side effects are an unavoidable consequence of programming in the real
 world. uDLang makes no attempt to hide them: instead, uDLang *models*
 side-effects as data.
@@ -52,45 +86,6 @@ output data has benefits:
 You should always declare your output type as precisely as you can,
 even if you know that a downstream process forces conversion to plain
 text.
-
-
-# Technical Details #
-
-A program in uDLang defines a *kernel* -- a piece of code executed on
-a single input *record* to produce arbitrary output. This kernel may
-be executed once on a single record. Or, it may be executed repeatedly
-to batch process an entire file. Or, it maybe executed continuously to
-process a stream of realtime-data. Anything goes, so long as the data
-can be segmented into records of a well-defined type.
-
-A uDLang environment exposes *no* mutable global state to the running
-script whatsoever. All state is contained entirely within the input
-*record*.
-
-The lifecycle of a uDLang program is as follows:
-- compile: the input source is parsed, type-checked, and converted an
-  optimized representation. This can take place at ahead of time, or
-  immediately after startup.
-- load: a compiled program is loaded into the memory of an embedding
-  environment.
-- init: one-time initialization may optionally take place, the result
-  of which is re-used between exec phases.
-- read: a frame is consumed from an input file descriptor, and
-  deserialized into memory as a record.
-- exec: the kernel is allowed to run to completion with the record
-  given as input. the kernel may emit one or more "side effects" as
-  output.
-- present: the side effects are collected, and presented on the output
-  file descriptor.
-
-The sequence of read, exec, present repeats indefinitely, until the
-runtime environment terminates. a uDLang kernel has no direct control
-over its runtime environment, though in certain processing modes, the
-runtime may decide to terminate in response to the behavior of a
-uDLang kernel.
-
-The exact shape of the input accepted by a uDLang kernel is specified
-through the use of `param` definitions.
 
 ## Types ##
 
