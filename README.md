@@ -286,9 +286,9 @@ uDLang is in its infancy, (i.e. vaporware). If the ideas behind uDLang exite you
 If you don't know where to start, consider submitting test cases or example scripts. How might you use
 a tool like uDLang? I'd love to hear from you!
 
- - [] Grammar: incomplete
- - [] Runtime: to be ported from uDashbord
- - [] Codegen: non-existent.
- - [] Typechecker: very rough
- - [] Command line tool: non-existent.
+ - Grammar: incomplete
+ - Runtime: to be ported from uDashbord
+ - Codegen: non-existent.
+ - Typechecker: very rough
+ - Command line tool: non-existent.
  
