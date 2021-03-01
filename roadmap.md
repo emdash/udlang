@@ -2,6 +2,8 @@
 
 By milestone.
 
+The current project status is `0.1-pre_mvp`, meaning it has not yet reached MVP status.
+
 ## 0.1-mvp ##
 
 - Feature complete enough for the example in the readme
