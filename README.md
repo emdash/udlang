@@ -95,9 +95,10 @@ proc format_item(item: TodoItem) {
   // The item's status is appended directly to the element's class.
   li({class: "todo-item ${item.status}"}) {
     text(item.name);
-    // ? is the *existential* operator, which returns true if an optional
-    // field is present. An optional field *must* be tested for existence.
-    if (item.blocker?) {
+    // .?. is the *existential* operator, which is like `.` but merely tests
+    // if an optional field is present. Access to an optional field must be guarded
+    // in some way. The goal is to statically enforce this.
+    if (item.?.blocker) {
        let blocker = items[item.blocker];
        div({class: "alert"}) {
            text("Blocked on ${blocker.name}");
