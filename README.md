@@ -240,9 +240,10 @@ For more information, see `manual.md`.
  - Allow for efficient execution via interpretation, ahead-of-time
    compilation, or JIT.
  
-## Language Features ##
+## Language Features (Proposed for MVP) ##
 
  - Curly-brace syntax friendly to a mainstream audience, and compatible with JSON.
+ - Destructuring assignments.
  - Expressive type system that models real-world data.
     - Strong typing with generics.
     - HKT
@@ -252,10 +253,6 @@ For more information, see `manual.md`.
  - Principled system for managing side-effects.
  - Templates.
  - Semantics allowing for deep analysis and optimization.
- 
-uDLang is in its infancy. If you would like to contribute to its
-design, specification, or reference implementation, feel free to
-submit an issue.
 
 ## Reference Implementation Goals ##
 
@@ -283,7 +280,11 @@ Command-line tool:
 
 ## Project Status ##
 
-uDLang is in its infancy, (i.e. vaporware). If the ideas behind uDLang exite you, contributions are welcome. If you don't know where to start, consider submitting test cases or example scripts.
+The current version is `0.1-pre_mvp`.
+
+uDLang is in its infancy, (i.e. vaporware). If the ideas behind uDLang exite you, contributions are welcome. 
+If you don't know where to start, consider submitting test cases or example scripts. How might you use
+a tool like uDLang? I'd love to hear from you!
 
  - [] Grammar: incomplete
  - [] Runtime: to be ported from uDashbord
