@@ -19,6 +19,7 @@ The current project status is `0.1-pre_mvp`, meaning it has not yet reached MVP 
 - Potentially breaking changes to the language, based on experience using it within uDashboard.
 - limited optimizations in the implementation, based on benchmarking real-world code.
 - fully static type checking.
+  - support real HM-style type inference
 - comprehensive test suite
 - official installation procedure, documented
 - packaging for buildroot, NixOS, Debian
