@@ -171,7 +171,7 @@ template element(tag: Str, attrs?: Map) using children {
   
   // Append any attributes to the output.
   for attr, value in attrs {
-    out "${quote(attr)}=${quote(value)}";
+    out " ${quote(attr)}=${quote(value)}";
   }
   
   // uDLang supports a back-tracking mechanism called a *subjunctive*.
