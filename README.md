@@ -165,7 +165,7 @@ func quote(text: Str) -> Str = { /* ... */ };
 // A template allows flexible composition of functions that produce side-effects.
 // Here, the `using` syntax is just sugar for binding `children` to a closure 
 // argument. The `template` keyword is intended mainly as hint for linters.
-template element(tag: Str, attrs?: Map) using children {
+template element(tag: Str, attrs: Map<Str> = {}) using children {
   // Begin by writing the opening tag.
   out "<${tag} ";
   
