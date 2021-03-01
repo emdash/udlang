@@ -38,19 +38,19 @@ By milestone.
 
 - First stable release.
 - Develop an official specification for the language.
-- Experimental support for ahead-of-type compilation, targeting an intermediate format (likely webassembly or LLVM).
+- Experimental support for ahead-of-time compilation, targeting an intermediate format (likely webassembly or LLVM).
 
 ## 2.0 ##
 
 - Second stable release.
-- May offer a newer, incompatible opt-in spec for the language.
+- May offer a newer, incompatible edition spec for the language (opt-in).
 - Stabilized ahead-of-time compilation.
 - Experimental native / jit compilation.
 
 ## 3.0 ##
 
 - Third stable release
-- May offer a newer, incompatible, opt-in spec for the language.
+- May offer a newer, incompatible, spec for the language (opt-in).
 - May deprecate earlier editions.
 - Stabilized native / jit compilation.
 
