@@ -25,6 +25,7 @@ Project is in its infancy so all of this is subject to change, depending on my t
 - limited optimizations in the implementation, based on benchmarking real-world code.
 - fully static type checking.
   - support real HM-style type inference
+  - HKTs.
 - comprehensive test suite
 - official installation procedure, documented
 - packaging for buildroot, NixOS, Debian
