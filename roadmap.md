@@ -11,6 +11,13 @@ Project is in its infancy so all of this is subject to change, depending on my t
 
 ## 0.1-mvp ##
 
+The main goal here is to get a minimum viable product so that I can evaluate how well uDLang is likely to live up to its stated goals,
+and make sure the fundamental design of the language is reasonable.
+
+The implementation of the interpreter will kept intentionally simple,
+so that it will be easy to modify as the language evolves. Benchmarks will be written, to establish a performance baseline to compare against
+future versions.
+
 - Feature complete enough for the example in the readme
 - Naive proof-of-concept implementation.
 - Static type checking can be incomplete. Fall back to runtime checks for anything tricky.
@@ -19,6 +26,9 @@ Project is in its infancy so all of this is subject to change, depending on my t
 - Stretch goal: also support msgpack with a simple binary framing protocol.
 
 ## 0.2 ##
+
+The main goal is to get uDLang to a state where work on uDashboard can continue, while cleaning up any egregious mistakes in the language design
+or implementation that emerge during development of uDashboard.
 
 - Feature complete enough for uDashboard
 - Potentially breaking changes to the language, based on experience using it within uDashboard.
@@ -32,15 +42,21 @@ Project is in its infancy so all of this is subject to change, depending on my t
 
 ## 0.3 ##
 
+By this release, it is hoped that uDLang has found a niche in the wider world outside of uDashboard. Lessons
+learned from uDashboard can inform the design of the standard library. Perhaps there will be enough community
+interest to justify time-consuming optimizations in the implementation.
+
 - Potentially more breaking changes, based on real-world usage and user feedback
 - more optimizations in the implementation
 - introduce standard library
 
 ## 0.4 - 0.9 ##
 
-- Begin stabilization of core language and standard library
-- add optional build-time support for additonal encodings and framing formats.
-- add comprehensive flags for controlling every aspect of the runtime.
+If uDLang enjoys sustained interest following 0.3, then users can look forward to:
+
+- stabilization of core language and standard library
+- optional build-time support for additonal encodings and framing formats.
+- comprehensive set of flags to control every aspect of the runtime.
 - increasingly-aggressive optimizations in the implementation.
 
 ## 1.0 ##
