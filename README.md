@@ -244,10 +244,11 @@ For more information, see `manual.md`.
 
  - Curly-brace syntax friendly to a mainstream audience, and compatible with JSON.
  - Destructuring assignments.
+ - Partial Evaluation.
  - Expressive type system that models real-world data.
     - Strong typing with generics.
-    - HKT
-    - ADTs
+    - HKT (Higher Kinded Types) *Targeted for 0.2 and later*
+    - ADTs (via union types)
  - String interpolation.
  - Absolutely no mutable state allowed. Period.
  - Principled system for managing side-effects.
