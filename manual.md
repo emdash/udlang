@@ -1,4 +1,4 @@
-# Technical Details #
+# Language Model #
 
 A program in uDLang defines a *kernel* -- a piece of code executed on
 a single input *record* to produce arbitrary output. This kernel may
@@ -156,12 +156,12 @@ each alternative.
 
 ### Filter Types ###
 
-This is an experimental feature, which has yet to be fully designed,
+This is an experimental concept, which has yet to be fully designed,
 but the general idea is to provide a catch-all mechanism for
 experimenting with extensions to the type system.
 
 Different ways this could manifest. One idea might be a set-theoretic
-approach, which might allow yout do type subsetting with boolean
+approach, which might allow you to do type subsetting with boolean
 predicates.
 
 `type EvenInt: {x: Int | x % 2 == 0}`
@@ -193,13 +193,33 @@ signatures in the process.
 Somewhere in the middle are *macros*, a heavy-weight solution to what
 should be a simple problem.
 
-** TBD: summarize the template syntax, and how it de-sugars to a closure
-argument.**
+There are two parts to the template mechanism: Template definitions and
+template calls.
+
+Declaration syntax: `template <name:Id> <args:Arglist> using <delegate:Id> <body:Block>`
+
+```
+template wrap(x: Str) using content {
+  out x;
+  content();
+  out x;
+}
+```
+
+You call it like this:
+
+```
+wrap("|") {
+   out "bar";
+}
+```
+
+This example outputs: `|bar|`
 
 This allows function calls to nest in a way that more closely
 resembles the shape of the data being produced.
 
-For now, the template mechanism is restricted to *proceedures*
+For now, the template mechanism is restricted to *procedures*
 (functions with return-type void), but this may be relaxed in the
 future if it doesn't lead to ambiguities in the grammar.
 
@@ -287,3 +307,7 @@ opening lines to "Yesterday".
 
 While it may seem like magic, it's not: it's possible precisely
 because uDLang embraces pure, functional semantics.
+
+## Syntax Reference (with Examples) ##
+
+TBD
