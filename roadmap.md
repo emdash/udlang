@@ -4,7 +4,7 @@ By milestone.
 
 The current project status is `0.1-pre_mvp`, meaning it has not yet reached MVP status.
 
-Open to the possability of embracing either or both native or jit compilation. We'll have to see what
+Open to the possiblity of embracing either or both native or jit compilation. We'll have to see what
 feels like the best fit given how the language ends up getting used.
 
 Project is in its infancy so all of this is subject to change, depending on my time, resources, community involvment, etc.
