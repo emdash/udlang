@@ -1,4 +1,32 @@
-# Language Model #
+# Programming In uDLang
+
+In the simplest possible terms: uDLang programs represent stateless
+transformations on data. uDLang programs can be thougt of as a box
+which consumes data from an *upstream* channel, processes that data,
+and then the result *downstream*. It does this in *record-oriented*
+fashion. A complete record of input is read, though output can be
+produced incrementally if desired.
+
+uDLang can be used for simple tasks, such as converting between two
+slightly different JSON-based formats. Or it can be used for complex
+processing, such as rendering output in HTML, post-script, svg,
+graphviz, etc.
+
+This programming model can be useful for batch processing of data,
+stream processing, event processing, etc. uDLang is just a piece of
+the puzzle, but it's a powerful one.
+
+You can think of it like a principled template engine. Or you can
+think of it like `jq` on steroids.
+
+TBD: example involving websockets or other streaming data.
+
+uDLang generally needs to work in conjunction with upstream and
+downstream processes -- though it need not, and both the input and
+output streams can be plain files. This is especially useful when
+testing uDLang scripts.
+
+# Language Model
 
 A program in uDLang defines a *kernel* -- a piece of code executed on
 a single input *record* to produce arbitrary output. This kernel may
