@@ -1,6 +1,6 @@
 # uDLang #
 
-uDLang is a pure functional language with *practical* applications.
+uDLang is a minimalist, practical *functional* programming language.
 
 It supports creating efficient *filters*: small programs which operate
 on structured data.
@@ -26,13 +26,82 @@ For a more detaled discussion of uDlang's design, see `manual.md`.
 **uDLang is a work in progress, not all features documented here are
 implemented**.
 
+## What uDLang Is 
+
+uDLang can be summed up like this: take the Elm out of the browser and
+put it into a unix pipleine. Wrap it up in a syntax that feels more
+friendly to those whose eyes have spent decades staring at C-family
+languages. Then see what I can build with it. It is the marriage of
+functional programming, MVC, and the "unix philosophy".
+
+The idea is that most applications reduce to a "uDLang sandwich": A
+bit of code to collect data; another bit of code which executes
+commands; and uDLang in the middle, transforming the input into the
+output.
+
+This separation of concerns means that each piece can be easily tested
+in isolation, while the functional semantics of uDLang itself provide
+freedom to explore various optimization strategies without breaking
+your code. Alternative implementations could one day adapt uDLang to
+exotic hardware, like FPGAs and GPUs.
+
+The focus on short-running filters means that resource usage should be
+deterministic with respect to the input, staying within a high water
+mark that can at least be characterized experimentally, if not
+predicted analytically.
+
+The focus on records and streaming leaves open the possibility for
+very cache-efficient implementations in the future.
+
+The focus on functional semantics means uDLang can benefit from the
+vast trove of academic literature which has informed the design of
+languages like Haskell and Rust.
+
+uDLang is:
+- functional
+- immutable
+- value-oriented
+- completely statically-typed
+- concise, without being cryptic
+- portable
+- embeddable
+- a data-description language
+
+## What uDLang is not
+
+uDLang is not a *systems* language. You cannot write an operating
+system entirely in uDLang. But you could, in theory, write *parts* of
+an operating system in it, given a suitable implementation.
+
+You cannot perform IO directly in uDLang. IO facilities are provided
+by the implementation, and / or embedding environment.
+
+You cannot interact directly with hardware. uDLang you cannot access
+memory directly. And all data is immutable. uDLang omits these
+capabilities because they are irrelevant to the business logic of your
+application.
+
+Any uDLang code will exist as part of a larger system, even if it's
+just the unix kernel and shell.
+
+uDLang is not production-ready today. But I hope it will useful for
+casual coding soon, and I hope some day uDLang is capable of running
+in a production environment.
+
 ## Why uDLang ##
 
-What started as an attempt to write a quick-and-dirty DSL for uDash,
-another project of mine, snowballed into a deep dive into compilers,
-type theory, and the Rust programming language.
+uDLang started as a quick-and-dirty DSL for uDash, another project of
+mine. Over time, it snowballed into a deep dive into compilers, type
+theory, and the Rust programming language.
 
-My hope is that all this effort will prove generally useful to others.
+In the course of all this, I had the idea that a small, pure,
+functional programming language could work quite well in the context
+of stream processing, and so I decided to explore the idea further
+here.
+
+As hinted at above, I think there
+
+My hope is that all this will someday prove useful to others.
 
 uDLang has many sources of inspiration, in addition to those already listed:
 - FlowJS, for the syntax and semantics of type annotations.
@@ -42,6 +111,12 @@ uDLang has many sources of inspiration, in addition to those already listed:
 - JSON Schema
 - CDL, the most minimal approach to language design I have yet encountered, and well worth pondering.
 - The Elm project.
+
+## Why the *name* uDLang?
+
+The name is short for uDashboard Language. That's it. It's a working
+title, and I'm open to changing it if something more apropos can be
+found.
 
 ## A Simple Example ##
 
