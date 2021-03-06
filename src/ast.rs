@@ -1,4 +1,5 @@
 use std::collections::HashMap;
+use std::collections::HashSet;
 use std::rc::Rc;
 use std::ops::Deref;
 
@@ -14,6 +15,26 @@ pub type Seq<T> = Vec<Node<T>>;
 pub type PairSeq<T> = Vec<(Node<T>, Node<T>)>;
 pub type AList<T> = Vec<(String, Node<T>)>;
 pub type Map<T> = HashMap<String, Node<T>>;
+
+
+pub fn to_seq<T>(items: Vec<T>) -> Seq<T> {
+    items.into_iter().map(|e| Node::new(e)).collect()
+}
+
+
+pub fn to_alist<T>(items: Vec<(String, T)>) -> AList<T> {
+    items.into_iter().map(|i| (i.0, Node::new(i.1))).collect()
+}
+
+
+pub fn to_map<T>(items: Vec<(String, T)>) -> Map<T> {
+    items.into_iter().map(|i| (i.0, Node::new(i.1))).collect()
+}
+
+
+pub fn map_to_seq<T>(items: &Map<T>) -> Seq<T> {
+    items.iter().map(|i| i.1.clone()).collect()
+}
 
 
 // Enum for cairo-specific operations
@@ -138,25 +159,6 @@ pub enum Expr {
     Lambda(AList<TypeTag>, Node<TypeTag>, Node<Expr>)
 }
 
-
-pub fn to_seq<T>(items: Vec<T>) -> Seq<T> {
-    items.into_iter().map(|e| Node::new(e)).collect()
-}
-
-
-pub fn to_alist<T>(items: Vec<(String, T)>) -> AList<T> {
-    items.into_iter().map(|i| (i.0, Node::new(i.1))).collect()
-}
-
-
-pub fn to_map<T>(items: Vec<(String, T)>) -> Map<T> {
-    items.into_iter().map(|i| (i.0, Node::new(i.1))).collect()
-}
-
-
-pub fn map_to_seq<T>(items: &Map<T>) -> Seq<T> {
-    items.iter().map(|i| i.1.clone()).collect()
-}
 
 
 pub fn s(s: &str) -> String {
@@ -393,4 +395,203 @@ pub struct Program {
     pub description: String,
     pub params: HashMap<String, (TypeTag, String)>,
     pub code: Seq<Statement>
+}
+
+
+// Helper object for building expressions concisely.
+//
+// Takes care of caching and sharing node values where possible.
+struct Builder {
+    // Singleton values that can be used directly
+    pub e_void:  SubExpr,
+    pub e_this:  SubExpr,
+    pub t_void:  TypeExpr,
+    pub t_none:  TypeExpr,
+    pub t_bool:  TypeExpr,
+    pub t_int:   TypeExpr,
+    pub t_float: TypeExpr,
+    pub t_point: TypeExpr,
+    pub t_any:   TypeExpr,
+    pub t_this:  TypeExpr,
+}
+
+
+impl Builder {
+    fn new() -> Self {
+	Self {
+	    e_void  : Node::new(Expr::Void),
+	    e_this  : Node::new(Expr::This),
+	    t_void  : Node::new(TypeTag::Void),
+	    t_none  : Node::new(TypeTag::None),
+	    t_bool  : Node::new(TypeTag::Bool),
+	    t_int   : Node::new(TypeTag::Int),
+	    t_float : Node::new(TypeTag::Float),
+	    t_point : Node::new(TypeTag::Point),
+	    t_any   : Node::new(TypeTag::Any),
+	    t_this  : Node::new(TypeTag::This)
+	}
+    }
+
+    // Should return a memoized Rc to a subexpression, but can't
+    // because Expr isn't hashable.
+    //
+    // XXX: Fix this when issue #5 is fixed.
+    fn subexpr(&mut self, expr: Expr) -> SubExpr {
+	Node::new(expr)
+    }
+
+    // Like above, but for types
+    //
+    // XXX: same fixme.
+    fn type_(&mut self, t: TypeTag) -> Node<TypeTag> {
+	Node::new(t)
+    }
+
+    // Like above but for statements
+    //
+    // XXX: same fixme
+    fn statement(&mut self, s: Statement) -> Node<Statement> {
+	Node::new(s)
+    }
+
+    // ** Every variant in Expr gets a short-hand method in this section **
+    //
+    // In general, these should return a value wrapped in Node<> which
+    // has been memoized where possible.
+
+    fn b(&mut self, value: bool) -> SubExpr {
+	self.subexpr(Expr::Bool(value))
+    }
+
+    fn i(&mut self, value: i64) -> SubExpr {
+	self.subexpr(Expr::Int(value))
+    }
+
+    fn f(&mut self, value: f64) -> SubExpr {
+	self.subexpr(Expr::Float(value))
+    }
+
+    fn s(&mut self, value: &str) -> SubExpr {
+	self.subexpr(Expr::Str(String::from(value)))
+    }
+
+    fn point(&mut self, x: f64, y: f64) -> SubExpr {
+	self.subexpr(Expr::Point(x, y))
+    }
+
+    fn list(&mut self, value: &[SubExpr]) -> SubExpr {
+	self.subexpr(Expr::List(value.iter().cloned().collect()))
+    }
+
+    fn e_map(&mut self, value: &[(&str, SubExpr)]) -> SubExpr {
+	let value = value
+	    .iter()
+	    .map(|v| (String::from(v.0), v.1.clone()))
+	    .collect();
+
+	self.subexpr(Expr::Map(value))
+    }
+
+    fn id(&mut self, value: &str) -> SubExpr {
+	self.subexpr(Expr::Id(value.to_string()))
+    }
+
+    fn dot(&mut self, lhs: SubExpr, field: String) -> SubExpr {
+	self.subexpr(Expr::Dot(lhs.clone(), field))
+    }
+
+    fn index(&mut self, lhs: SubExpr, rhs: SubExpr) -> SubExpr {
+	self.subexpr(Expr::Index(lhs.clone(), rhs))
+    }
+
+    fn cond(
+	&mut self,
+	conds: &[(SubExpr, SubExpr)],
+	else_: SubExpr
+    ) -> SubExpr {
+	let conds = conds.iter().cloned().collect();
+	self.subexpr(Expr::Cond(conds, else_))
+    }
+
+    fn block(
+	&mut self,
+	statements: &[Node<Statement>],
+	retval: SubExpr
+    ) -> SubExpr {
+	let statements = statements.iter().cloned().collect();
+	self.subexpr(Expr::Block(statements, retval))
+    }
+
+    fn bin(&mut self, op: BinOp, lhs: SubExpr, rhs: SubExpr) -> SubExpr {
+	self.subexpr(Expr::BinOp(op, lhs, rhs))
+    }
+
+    fn un(&mut self, op: UnOp, operand: SubExpr) -> SubExpr {
+	self.subexpr(Expr::UnOp(op, operand))
+    }
+
+    fn call(&mut self, callee: SubExpr, args: &[SubExpr]) -> SubExpr {
+	self.subexpr(Expr::Call(callee, args.iter().cloned().collect()))
+    }
+
+    fn e_lambda(
+	&mut self,
+	args: &[(&str, Node<TypeTag>)],
+	ret: Node<TypeTag>,
+	body: SubExpr
+    ) -> SubExpr {
+	let args = args
+	    .iter()
+	    .map(|arg| {
+		let (name, t) = arg;
+		(name.to_string(), t.clone())
+	    })
+	    .collect();
+	self.subexpr(Expr::Lambda(args, ret, body))
+    }
+
+    // Every variant in TypeTag gets a method here
+
+    fn type_name(&mut self, name: &str) -> TypeExpr {
+	self.type_(TypeTag::TypeName(name.to_string()))
+    }
+
+    fn option(&mut self, t: TypeExpr) -> TypeExpr {
+	self.type_(TypeTag::Option(t))
+    }
+
+    fn tuple(&mut self, tys: &[TypeExpr]) -> TypeExpr {
+	self.type_(TypeTag::Tuple(tys.iter().cloned().collect()))
+    }
+
+    fn ty_map(&mut self, value_type: TypeExpr) -> TypeExpr {
+	self.type_(TypeTag::Map(value_type))
+    }
+
+    fn map_expr(&mut self, fields: &[(&str, TypeExpr)]) -> TypeExpr {
+	let fields = fields
+	    .iter()
+	    .map(|field| (field.0.to_string(), field.1.clone()))
+	    .collect();
+	self.type_(TypeTag::MapExpr(fields))
+    }
+
+    fn record(&mut self, fields: &[(&str, Member)]) -> TypeExpr {
+	let fields = fields
+	    .iter()
+	    .map(|field| (field.0.to_string(), Node::new(field.1.clone())))
+	    .collect();
+	self.type_(TypeTag::Record(fields))
+    }
+
+    fn ty_lambda(&mut self, fields: &[TypeExpr], ret: TypeExpr) -> TypeExpr {
+	self.type_(TypeTag::Lambda(fields.iter().cloned().collect(), ret))
+    }
+
+    fn union(&mut self, ts: &[TypeExpr]) -> TypeExpr {
+	self.type_(TypeTag::Union(ts.iter().cloned().collect()))
+    }
+
+    // TBD: TypeCons, TypeFunc... these will probably change from
+    // their current form.
 }
