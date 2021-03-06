@@ -172,7 +172,7 @@ impl TypeChecker {
 
     pub fn eval_cond(
         &self,
-        cases: &Seq<(Expr, Expr)>,
+        cases: &PairSeq<Expr>,
         default: &Node<Expr>
     ) -> TypeExpr {
         let conds: Result<Seq<TypeTag>, TypeError> = cases

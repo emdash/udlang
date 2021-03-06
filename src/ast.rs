@@ -11,6 +11,7 @@ use std::ops::Deref;
 // `sd::Rc`.
 pub type Node<T> = Rc<T>;
 pub type Seq<T> = Vec<Node<T>>;
+pub type PairSeq<T> = Vec<(Node<T>, Node<T>)>;
 pub type AList<T> = Vec<(String, Node<T>)>;
 pub type Map<T> = HashMap<String, Node<T>>;
 
@@ -129,7 +130,7 @@ pub enum Expr {
     Id(String),
     Dot(Node<Expr>, String),
     Index(Node<Expr>, Node<Expr>),
-    Cond(Seq<(Expr, Expr)>, Node<Expr>),
+    Cond(PairSeq<Expr>, Node<Expr>),
     Block(Seq<Statement>, Node<Expr>),
     BinOp(BinOp, Node<Expr>, Node<Expr>),
     UnOp(UnOp, Node<Expr>),
@@ -245,7 +246,12 @@ pub fn index(obj: Expr, e: Expr) -> Expr {
 
 
 pub fn cond(cases: Vec<(Expr, Expr)>, default: Expr) -> Expr {
-    Expr::Cond(to_seq(cases), Node::new(default))
+    let cases = cases
+	.iter()
+	.cloned()
+	.map(|case| (Node::new(case.0), Node::new(case.1)))
+	.collect();
+    Expr::Cond(cases, Node::new(default))
 }
 
 
@@ -375,6 +381,10 @@ pub fn guard(
 
     expr_for_effect(cond(clauses, default))
 }
+
+
+type SubExpr = Node<Expr>;
+type TypeExpr = Node<TypeTag>;
 
 
 // ADT for programs
