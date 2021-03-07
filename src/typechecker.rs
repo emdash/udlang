@@ -115,7 +115,7 @@ impl TypeChecker {
             .collect();
         Ok(Node::new(TypeTag::List(Self::narrow(items?))))
     }
-    
+
     pub fn eval_map(&self, fields: &Map<Expr>) -> TypeExpr {
         let fields: Result<Map<TypeTag>, TypeError> = fields
             .iter()
@@ -123,7 +123,7 @@ impl TypeChecker {
             .collect();
         Ok(Node::new(TypeTag::MapExpr(fields?)))
     }
-    
+
     pub fn eval_id(&self, name: &String) -> TypeExpr {
         let value = self.types.get(name);
         if let Some(type_) = value {
@@ -132,7 +132,7 @@ impl TypeChecker {
             Err(Undefined(name.clone()))
         }
     }
-    
+
     pub fn eval_dot(&self, obj: &Node<Expr>, field: &String) -> TypeExpr {
         let obj = self.eval_expr(obj)?;
         match obj.deref() {
@@ -142,7 +142,7 @@ impl TypeChecker {
             _ => Err(NotAMap(obj.clone()))
         }
     }
-    
+
     pub fn eval_block(
         &self,
         stmts: &Seq<Statement>,
@@ -296,7 +296,7 @@ impl TypeChecker {
             _                       => Err(NotIterable(result))
         }
     }
- 
+
     // Check whether expr is a bool.
     pub fn is_bool(&self, expr: &Node<Expr>) -> TypeCheck {
         let result = self.eval_expr(expr)?;
@@ -386,230 +386,221 @@ impl TypeChecker {
 #[cfg(test)]
 mod tests {
     use super::*;
+    #[allow(unused_imports)]
+    use crate::ast;
+    #[allow(unused_imports)]
+    use crate::ast::*;
 
-    // XXX: see github issue #11.
-    macro_rules! string(
-        { $s:expr } => { String::from($s) }
+    // Associative list macro, to go along with vec!
+    //
+    // Actually it really constructs an associative list, and then
+    // `collect()`s it.
+    macro_rules! alist(
+        { $($key:expr => $value:expr),* } => {
+            [ $( ($key, $value)),* ]
+        }
     );
 
-    // Hash literal that wraps items in a Node
+    
+    // Construct containers from an alist
+    //
+    // Actually it really constructs an associative list, and then
+    // `collect()`s it.
     macro_rules! map(
         { $($key:expr => $value:expr),* } => {
-            vec! { $( (string!($key), Node::new($value))),* }
-            .iter()
-            .cloned()
-            .collect()
+            [ $( ($key.to_string(), $value)),* ].iter().cloned().collect()
         }
     );
 
-    // Vec literal that wraps items in a Node
-    macro_rules! list(
-        { $($i:expr),* } => { vec! { $( Node::new($i)),* } }
-    );
+    // Assert that expr evaluated in env has type t.
+    fn assert_types_to(env: Env<TypeTag>, expr: &Expr, t: &TypeExpr) {
+	let tc = TypeChecker::new(env);
+	assert_eq!(tc.eval_expr(expr), *t);
+    }
 
-    macro_rules! node(
-        { $i:expr } => { Node::new($i) }
-    );
-
-    macro_rules! assert_types_to(
-        ( $env:expr, $e:expr, Ok($t:expr) ) => {
-            let tc = TypeChecker::new($env);
-            #[allow(unused_imports)]
-            let expr = {
-                use Expr::*;
-                $e
-            };
-            #[allow(unused_imports)]
-            let type_ = {
-                use TypeTag::*;
-                $t
-            };
-            assert_eq!(tc.eval_expr(&expr), Ok(Node::new(type_)));
-        };
-        ( $env:expr, $e:expr, Err($t:expr) ) => {
-            let tc = TypeChecker::new($env);
-            let expr = {
-                use Expr::*;
-                $e
-            };
-            #[allow(unused_imports)]
-            let err = {
-                use TypeError::*;
-                use TypeTag::*;
-                $t
-            };
-            assert_eq!(tc.eval_expr(&expr), Err(err));
-        }
-
-    );
-
+    // Works like map!, but constructs an Env instead.
+    //
+    // Env has a mutable API, so this can't really share code with
+    // map.  This could be a function, but I don't mind having this
+    // extra little bit of sugar.
     macro_rules! env (
         ( $( $id:expr => $v:expr),* ) => { {
             let env = Env::root();
-            #[allow(unused_imports)]
-            {
-                use TypeTag::*;
-                $( env.define(&string! {$id}, & node! {$v}); )*
-            }
-            env
-        } }
+            $( env.define(&$id.to_string(), &($v)); )*
+	    env
+	} }
     );
 
     #[test]
     fn test_simple() {
-        assert_types_to!(
-            Env::root(),
-            Map(map! {
-                "foo" => Int(42),
-                "bar" => Str(string!("baz")),
-                "quux" => List(list! {Int(1), Int(2), Int(3)})
-            }), Ok(MapExpr(map! {
-                "foo" => Int,
-                "bar" => Str,
-                "quux" => List(node! {Int})
-            }))
-        );
+	let ast = Builder::new();
+
+	let expr = ast.map(&[
+            ("foo", ast.i(42)),
+            ("bar", ast.s("baz")),
+            ("quux", ast.list(&[ast.i(1), ast.i(2), ast.i(3)]))
+        ]);
+
+	let t = ast.map_expr(&[
+            ("foo", ast.t_int.clone()),
+            ("bar", ast.t_str.clone()),
+            ("quux", ast.t_list(ast.t_int.clone()))
+	]);
+    
+        assert_types_to(Env::root(), &expr, &Ok(t));
     }
 
     #[test]
     fn test_list() {
-        assert_types_to!(
+	let ast = Builder::new();
+
+        assert_types_to(
             Env::root(),
-            List(list! {Int(42), Int(3), Int(4)}),
-            Ok(List(node! {Int}))
+            &ast.list(&[ast.i(42), ast.i(3), ast.i(4)]),
+            &Ok(ast.t_list(ast.t_int.clone()))
         );
-        assert_types_to!(
-            Env::root(),
-            List(list! {Float(42.0), Float(3.0), Float(4.0) }),
-            Ok(List(node! {Float}))
-        );
-        assert_types_to!(
-            Env::root(),
-            List(list! {Int(42), Float(2.0), Str(string!{"foo"})}),
-            Ok(List(node! {Union(list! {Int, Float, Str})}))
-        );
+
+	assert_types_to(
+	    Env::root(),
+	    &ast.list(&[ast.f(42.0), ast.f(3.0), ast.f(4.0)]),
+	    &Ok(ast.t_list(ast.t_float.clone()))
+	);
+
+	assert_types_to(
+	    Env::root(),
+	    &ast.list(&[ast.i(42), ast.f(2.0), ast.s("foo")]),
+	    &Ok(ast.t_list(
+		ast.union(&[
+		    ast.t_int.clone(),
+		    ast.t_float.clone(),
+		    ast.t_str.clone()]))
+	    )
+	);
     }
 
     #[test]
     fn test_id() {
-        assert_types_to!(
-            env! {"foo" => Int},
-            Id(string! {"foo"}),
-            Ok(Int)
-        );
-        assert_types_to!(
-            env! {"foo" => Int},
-            Id(string! {"bar"}),
-            Err(Undefined(string! {"bar"}))
-        );
+	let ast = Builder::new();
+
+	assert_types_to(
+	    env! {"foo" => ast.t_int.clone()},
+	    &ast.id("foo"),
+	    &Ok(ast.t_int.clone())
+	);
+
+	assert_types_to(
+	    env! {"foo" => ast.t_int.clone()},
+	    &ast.id("bar"),
+	    &Err(Undefined("bar".to_string()))
+	);
     }
 
     #[test]
     fn test_dot() {
-        assert_types_to!(
-            env! {"x" => MapExpr(map! {"foo" => Str})},
-            Dot(node! {Id(string! {"x"})}, string! {"foo"}),
-            Ok(Str)
+	let ast = Builder::new();
+
+        assert_types_to(
+            env! {"x" => ast.map_expr(&alist! {"foo" => ast.t_str.clone()})},
+            &ast.dot(ast.id("x"), "foo"),
+            &Ok(ast.t_str.clone())
         );
 
-        assert_types_to!(
-            env! {"x" => MapExpr(map! {"foo" => Str})},
-            Dot(node! {Id(string! {"x"})}, string! {"bar"}),
-            Err(KeyError(map! {"foo" => Str}, string! {"bar"}))
+	assert_types_to(
+            env! {"x" => ast.map_expr(&alist! {"foo" => ast.t_str.clone()})},
+            &ast.dot(ast.id("x"), "bar"),
+            &Err(KeyError(map! {"foo" => ast.t_str.clone()}, "bar".to_string()))
+        );
+	
+	assert_types_to(
+            env! {"x" => ast.map_expr(&alist! {"foo" => ast.t_str.clone()})},
+            &ast.dot(ast.i(42), "bar"),
+            &Err(NotAMap(ast.t_int.clone()))
         );
 
-        assert_types_to!(
-            Env::root(),
-            Dot(node! {Int(42)}, string! {"bar"}),
-            Err(NotAMap(node! {Int}))
-        );
+	assert_types_to(
+            env! {"x" => ast.map_expr(&alist! {
+		"foo" => ast.map_expr(&alist! {
+		    "bar" => ast.t_int.clone()
+		})
+	    })},
+	    &ast.dot(ast.dot(ast.id("x"), "foo"), "bar"),
+	    &Ok(ast.t_int.clone())
+	);
 
-        assert_types_to!(
-            env! {"x" => MapExpr(map! {"foo" => MapExpr(map! {"bar" => Int})})},
-            Dot(
-                node! {
-                    Dot(
-                        node! {
-                            Id(string! {"x"})
-                        },
-                        string! {"foo"}
-                    )
-                },
-                string! {"bar"}
-            ),
-            Ok(Int)
-        );
-
-        assert_types_to!(
-            env! {"x" => MapExpr(map! {"foo" => MapExpr(map! {"bar" => Int})})},
-            Dot(
-                node! {
-                    Dot(
-                        node! {
-                            Id(string! {"x"})
-                        },
-                        string! {"foo"}
-                    )
-                },
-                string! {"baz"}
-            ),
-            Err(KeyError(map! {"bar" => Int}, string! {"baz"}))
-        );
+	assert_types_to(
+            env! {"x" => ast.map_expr(&alist! {
+		"foo" => ast.map_expr(&alist! {
+		    "bar" => ast.t_int.clone()
+		})
+	    })},
+	    &ast.dot(ast.dot(ast.id("x"), "foo"), "baz"),
+	    &Err(
+		KeyError(
+		    map! {"bar" => ast.t_int.clone()},
+		    "baz".to_string()
+		)
+	    )
+	);
     }
 
 
     #[test]
     fn test_list_iter() {
+	let ast = Builder::new();
+
         let tc = TypeChecker::new(
-            env!{"x" => TypeTag::List(node!{TypeTag::Str})}
+            env!{"x" => ast.t_list(ast.t_str.clone())}
         );
 
-        let statement = node! {list_iter(
+        let statement = Node::new(ast.list_iter(
             "i",
-            id("x"),
-            emit("show_text", vec!{id("i")})
-        )};
+            ast.id("x"),
+            ast.emit("show_text", &[ast.id("i")])
+        ));
 
         assert_eq!(tc.check_statement(&statement), Ok(()));
 
-        let statement = node! {list_iter(
+        let statement = Node::new(ast.list_iter(
             "i",
-            id("x"),
-            Statement::ExprForEffect(Node::new(expr_block(vec!{}, id("i"))))
-        )};
+            ast.id("x"),
+            ast.expr_for_effect(ast.block(&[], ast.id("i")))
+        ));
 
         assert_eq!(
             tc.check_statement(&statement),
-            Err(Mismatch(Node::new(TypeTag::Str), Node::new(TypeTag::Void)))
+            Err(Mismatch(ast.t_str.clone(), ast.t_void.clone()))
         );
     }
 
 
     #[test]
     fn test_map_iter() {
+	let ast = Builder::new();
         let tc = TypeChecker::new(
-            env!{"x" => TypeTag::MapExpr(map!{"x" => Str})}
+            env!{"x" => ast.map_expr(
+		&(alist!{"x" => ast.t_str.clone()})
+	    )}
         );
 
-        let statement = node! {map_iter(
+        let statement = Node::new(ast.map_iter(
             "k",
             "v",
-            id("x"),
-            emit("show_text", vec!{id("v")})
-        )};
+            ast.id("x"),
+            ast.emit("show_text", &[ast.id("v")])
+        ));
 
         assert_eq!(tc.check_statement(&statement), Ok(()));
 
-        let statement = node! {map_iter(
+        let statement = Node::new(ast.map_iter(
             "k",
             "v",
-            id("x"),
-            Statement::ExprForEffect(Node::new(expr_block(vec!{}, id("v"))))
-        )};
+            ast.id("x"),
+            ast.expr_for_effect(ast.block(&[], ast.id("v")))
+        ));
 
         assert_eq!(
             tc.check_statement(&statement),
-            Err(Mismatch(Node::new(TypeTag::Str), Node::new(TypeTag::Void)))
+            Err(Mismatch(ast.t_str.clone(), ast.t_void.clone()))
         );
     }
 
@@ -617,17 +608,16 @@ mod tests {
     #[test]
     fn test_lambda() {
         use crate::ast::BinOp::*;
-        assert_types_to!(
-            env!{},
-            lambda(
-                to_alist(vec!{(s("x"), TypeTag::Int)}),
-                TypeTag::Int,
-                bin(Add, id("x"), Expr::Int(4))
+	let ast = Builder::new();
+	
+        assert_types_to(
+            Env::root(),
+            &ast.lambda(
+		&[("x", ast.t_int.clone())],
+		ast.t_int.clone(),
+                ast.bin(Add, ast.id("x"), ast.i(4))
             ),
-            Ok(TypeTag::Lambda(
-                to_seq(vec!{TypeTag::Int}),
-                node!{TypeTag::Int}
-            ))
+            &Ok(ast.t_lambda(&[ast.t_int.clone()], ast.t_int.clone()))
         );
     }
 }

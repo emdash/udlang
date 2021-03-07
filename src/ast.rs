@@ -1,5 +1,5 @@
 use std::collections::HashMap;
-use std::collections::HashSet;
+//use std::collections::HashSet;
 use std::rc::Rc;
 use std::ops::Deref;
 
@@ -296,6 +296,14 @@ pub enum Statement {
     Emit(String, Seq<Expr>),
     Def(String, Node<Expr>),
     TypeDef(String, Node<TypeTag>),
+    // XXX: Body of MapIter / ListIter should be an expression. Then
+    // these themselves can be expressions, rather than statements.
+    //
+    // XXX: further, could we consider making fold and map part of the
+    // language, to be treated as core constructs, rather than
+    // higher-order procedures provided by a library.
+    //
+    // Alternatively, fold and map could be templates.
     ListIter(String, Node<Expr>, Node<Statement>),
     MapIter(String, String, Node<Expr>, Node<Statement>),
     While(Node<Expr>, Node<Statement>),
@@ -401,32 +409,34 @@ pub struct Program {
 // Helper object for building expressions concisely.
 //
 // Takes care of caching and sharing node values where possible.
-struct Builder {
+pub struct Builder {
     // Singleton values that can be used directly
-    pub e_void:  SubExpr,
-    pub e_this:  SubExpr,
+    pub void:  SubExpr,
+    pub this:  SubExpr,
     pub t_void:  TypeExpr,
     pub t_none:  TypeExpr,
     pub t_bool:  TypeExpr,
     pub t_int:   TypeExpr,
     pub t_float: TypeExpr,
     pub t_point: TypeExpr,
+    pub t_str:   TypeExpr,
     pub t_any:   TypeExpr,
     pub t_this:  TypeExpr,
 }
 
 
 impl Builder {
-    fn new() -> Self {
+    pub fn new() -> Self {
 	Self {
-	    e_void  : Node::new(Expr::Void),
-	    e_this  : Node::new(Expr::This),
+	    void    : Node::new(Expr::Void),
+	    this    : Node::new(Expr::This),
 	    t_void  : Node::new(TypeTag::Void),
 	    t_none  : Node::new(TypeTag::None),
 	    t_bool  : Node::new(TypeTag::Bool),
 	    t_int   : Node::new(TypeTag::Int),
 	    t_float : Node::new(TypeTag::Float),
 	    t_point : Node::new(TypeTag::Point),
+	    t_str   : Node::new(TypeTag::Str),
 	    t_any   : Node::new(TypeTag::Any),
 	    t_this  : Node::new(TypeTag::This)
 	}
@@ -436,21 +446,21 @@ impl Builder {
     // because Expr isn't hashable.
     //
     // XXX: Fix this when issue #5 is fixed.
-    fn subexpr(&mut self, expr: Expr) -> SubExpr {
+    fn subexpr(&self, expr: Expr) -> SubExpr {
 	Node::new(expr)
     }
 
     // Like above, but for types
     //
     // XXX: same fixme.
-    fn type_(&mut self, t: TypeTag) -> Node<TypeTag> {
+    fn type_(&self, t: TypeTag) -> Node<TypeTag> {
 	Node::new(t)
     }
 
     // Like above but for statements
     //
     // XXX: same fixme
-    fn statement(&mut self, s: Statement) -> Node<Statement> {
+    pub fn statement(&self, s: Statement) -> Node<Statement> {
 	Node::new(s)
     }
 
@@ -459,31 +469,31 @@ impl Builder {
     // In general, these should return a value wrapped in Node<> which
     // has been memoized where possible.
 
-    fn b(&mut self, value: bool) -> SubExpr {
+    pub fn b(&self, value: bool) -> SubExpr {
 	self.subexpr(Expr::Bool(value))
     }
 
-    fn i(&mut self, value: i64) -> SubExpr {
+    pub fn i(&self, value: i64) -> SubExpr {
 	self.subexpr(Expr::Int(value))
     }
 
-    fn f(&mut self, value: f64) -> SubExpr {
+    pub fn f(&self, value: f64) -> SubExpr {
 	self.subexpr(Expr::Float(value))
     }
 
-    fn s(&mut self, value: &str) -> SubExpr {
+    pub fn s(&self, value: &str) -> SubExpr {
 	self.subexpr(Expr::Str(String::from(value)))
     }
 
-    fn point(&mut self, x: f64, y: f64) -> SubExpr {
+    pub fn point(&self, x: f64, y: f64) -> SubExpr {
 	self.subexpr(Expr::Point(x, y))
     }
 
-    fn list(&mut self, value: &[SubExpr]) -> SubExpr {
+    pub fn list(&self, value: &[SubExpr]) -> SubExpr {
 	self.subexpr(Expr::List(value.iter().cloned().collect()))
     }
 
-    fn e_map(&mut self, value: &[(&str, SubExpr)]) -> SubExpr {
+    pub fn map(&self, value: &[(&str, SubExpr)]) -> SubExpr {
 	let value = value
 	    .iter()
 	    .map(|v| (String::from(v.0), v.1.clone()))
@@ -492,20 +502,20 @@ impl Builder {
 	self.subexpr(Expr::Map(value))
     }
 
-    fn id(&mut self, value: &str) -> SubExpr {
+    pub fn id(&self, value: &str) -> SubExpr {
 	self.subexpr(Expr::Id(value.to_string()))
     }
 
-    fn dot(&mut self, lhs: SubExpr, field: String) -> SubExpr {
-	self.subexpr(Expr::Dot(lhs.clone(), field))
+    pub fn dot(&self, lhs: SubExpr, field: &str) -> SubExpr {
+	self.subexpr(Expr::Dot(lhs.clone(), field.to_string()))
     }
 
-    fn index(&mut self, lhs: SubExpr, rhs: SubExpr) -> SubExpr {
+    pub fn index(&self, lhs: SubExpr, rhs: SubExpr) -> SubExpr {
 	self.subexpr(Expr::Index(lhs.clone(), rhs))
     }
 
-    fn cond(
-	&mut self,
+    pub fn cond(
+	&self,
 	conds: &[(SubExpr, SubExpr)],
 	else_: SubExpr
     ) -> SubExpr {
@@ -513,8 +523,8 @@ impl Builder {
 	self.subexpr(Expr::Cond(conds, else_))
     }
 
-    fn block(
-	&mut self,
+    pub fn block(
+	&self,
 	statements: &[Node<Statement>],
 	retval: SubExpr
     ) -> SubExpr {
@@ -522,20 +532,20 @@ impl Builder {
 	self.subexpr(Expr::Block(statements, retval))
     }
 
-    fn bin(&mut self, op: BinOp, lhs: SubExpr, rhs: SubExpr) -> SubExpr {
+    pub fn bin(&self, op: BinOp, lhs: SubExpr, rhs: SubExpr) -> SubExpr {
 	self.subexpr(Expr::BinOp(op, lhs, rhs))
     }
 
-    fn un(&mut self, op: UnOp, operand: SubExpr) -> SubExpr {
+    pub fn un(&self, op: UnOp, operand: SubExpr) -> SubExpr {
 	self.subexpr(Expr::UnOp(op, operand))
     }
 
-    fn call(&mut self, callee: SubExpr, args: &[SubExpr]) -> SubExpr {
+    pub fn call(&self, callee: SubExpr, args: &[SubExpr]) -> SubExpr {
 	self.subexpr(Expr::Call(callee, args.iter().cloned().collect()))
     }
 
-    fn e_lambda(
-	&mut self,
+    pub fn lambda(
+	&self,
 	args: &[(&str, Node<TypeTag>)],
 	ret: Node<TypeTag>,
 	body: SubExpr
@@ -552,23 +562,27 @@ impl Builder {
 
     // Every variant in TypeTag gets a method here
 
-    fn type_name(&mut self, name: &str) -> TypeExpr {
+    pub fn type_name(&self, name: &str) -> TypeExpr {
 	self.type_(TypeTag::TypeName(name.to_string()))
     }
 
-    fn option(&mut self, t: TypeExpr) -> TypeExpr {
+    pub fn option(&self, t: TypeExpr) -> TypeExpr {
 	self.type_(TypeTag::Option(t))
     }
 
-    fn tuple(&mut self, tys: &[TypeExpr]) -> TypeExpr {
+    pub fn tuple(&self, tys: &[TypeExpr]) -> TypeExpr {
 	self.type_(TypeTag::Tuple(tys.iter().cloned().collect()))
     }
 
-    fn ty_map(&mut self, value_type: TypeExpr) -> TypeExpr {
+    pub fn t_list(&self, t: TypeExpr) -> TypeExpr {
+	self.type_(TypeTag::List(t))
+    }
+
+    pub fn t_map(&self, value_type: TypeExpr) -> TypeExpr {
 	self.type_(TypeTag::Map(value_type))
     }
 
-    fn map_expr(&mut self, fields: &[(&str, TypeExpr)]) -> TypeExpr {
+    pub fn map_expr(&self, fields: &[(&str, TypeExpr)]) -> TypeExpr {
 	let fields = fields
 	    .iter()
 	    .map(|field| (field.0.to_string(), field.1.clone()))
@@ -576,7 +590,7 @@ impl Builder {
 	self.type_(TypeTag::MapExpr(fields))
     }
 
-    fn record(&mut self, fields: &[(&str, Member)]) -> TypeExpr {
+    pub fn record(&self, fields: &[(&str, Member)]) -> TypeExpr {
 	let fields = fields
 	    .iter()
 	    .map(|field| (field.0.to_string(), Node::new(field.1.clone())))
@@ -584,14 +598,76 @@ impl Builder {
 	self.type_(TypeTag::Record(fields))
     }
 
-    fn ty_lambda(&mut self, fields: &[TypeExpr], ret: TypeExpr) -> TypeExpr {
+    pub fn t_lambda(&self, fields: &[TypeExpr], ret: TypeExpr) -> TypeExpr {
 	self.type_(TypeTag::Lambda(fields.iter().cloned().collect(), ret))
     }
 
-    fn union(&mut self, ts: &[TypeExpr]) -> TypeExpr {
+    pub fn union(&self, ts: &[TypeExpr]) -> TypeExpr {
 	self.type_(TypeTag::Union(ts.iter().cloned().collect()))
     }
 
     // TBD: TypeCons, TypeFunc... these will probably change from
     // their current form.
+
+    // ** Statements here ***
+    pub fn expr_for_effect(&self, expr: SubExpr) -> Node<Statement> {
+	match expr.deref() {
+            Expr::Block(stmts, node) => match node.deref() {
+		Expr::Void => if stmts.len() == 1 {
+                    stmts[0].clone()
+		} else {
+                    Node::new(Statement::ExprForEffect(expr))
+		},
+		_ => Node::new(Statement::ExprForEffect(expr))
+            },
+            _ => Node::new(Statement::ExprForEffect(expr))
+	}
+    }
+
+    pub fn emit(&self, name: &str, exprs: &[SubExpr]) -> Node<Statement> {
+	let exprs = exprs
+	    .iter()
+	    .cloned()
+	    .collect();
+	Node::new(Statement::Emit(name.to_string(), exprs))
+    }
+
+
+    pub fn def(&self, name: &str, expr: SubExpr) -> Node<Statement> {
+	Node::new(Statement::Def(name.to_string(), expr))
+    }
+
+
+    pub fn typedef(&self, name: &str, t: TypeExpr) -> Node<Statement> {
+	Node::new(Statement::TypeDef(name.to_string(), t))
+    }
+
+    pub fn list_iter(
+	&self,
+	name: &str, list: SubExpr,
+	body: Node<Statement>
+    ) -> Node<Statement> {
+	Node::new(
+	    Statement::ListIter(
+		name.to_string(),
+		list,
+		body
+	    )
+	)
+    }
+    
+    pub fn map_iter(
+	&self,
+	key: &str,
+	value: &str,
+	map: SubExpr,
+	body: Node<Statement>
+    ) -> Node<Statement> {
+	Node::new(Statement::MapIter(
+            String::from(key),
+            String::from(value),
+            map,
+            body
+	))
+    }
 }
