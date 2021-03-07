@@ -4,6 +4,30 @@ use std::rc::Rc;
 use std::ops::Deref;
 
 
+// Associative list macro, to go along with vec!
+//
+// Actually it really constructs an associative list, and then
+// `collect()`s it.
+#[macro_export]
+macro_rules! alist(
+    { $($key:expr => $value:expr),* } => {
+        [ $( ($key, $value)),* ]
+    }
+);
+
+
+// Construct containers from an alist
+//
+// Actually it really constructs an associative list, and then
+// `collect()`s it.
+#[macro_export]
+macro_rules! map(
+    { $($key:expr => $value:expr),* } => {
+        [ $( ($key.to_string(), $value)),* ].iter().cloned().collect()
+    }
+);
+
+
 // Abstract over various memory management strategies.
 //
 // Simplest solution to issue #7: we define a Node type and related
@@ -160,7 +184,6 @@ pub enum Expr {
 }
 
 
-
 pub fn s(s: &str) -> String {
     String::from(s)
 }
@@ -178,6 +201,13 @@ pub fn list(items: Vec<Expr>) -> Expr {
 
 pub fn map(items: Vec<(String, Expr)>) -> Expr {
     Expr::Map(to_map(items))
+}
+
+pub fn alist<T: Clone>(items: &[(&str, T)]) -> Vec<(String, T)> {
+    items
+	.iter()
+	.map(|i| (i.0.to_string(), i.1.clone()))
+	.collect()
 }
 
 
@@ -393,7 +423,7 @@ pub fn guard(
 }
 
 
-type SubExpr = Node<Expr>;
+pub type SubExpr = Node<Expr>;
 type TypeExpr = Node<TypeTag>;
 
 
@@ -543,6 +573,30 @@ impl Builder {
     pub fn call(&self, callee: SubExpr, args: &[SubExpr]) -> SubExpr {
 	self.subexpr(Expr::Call(callee, args.iter().cloned().collect()))
     }
+    
+    pub fn template_call(
+	&self,
+	func: SubExpr,
+	args: &[SubExpr],
+	delegate: SubExpr
+    ) -> Node<Statement> {
+	let mut args = args.to_vec();
+	// Construct a closure using block and append to arglist.
+	args.push(self.lambda(&[], self.t_void.clone(), delegate));
+	self.expr_for_effect(self.call(func, args.as_slice()))
+    }
+
+    pub fn template(
+	&self,
+	args: &[(&str, Node<TypeTag>)],
+	delegate: &str,
+	body: SubExpr
+    ) -> SubExpr {
+	let mut args = args.to_vec();
+	// Append the delegate closure argument to args.
+	args.push((delegate, self.t_lambda(&[], self.t_void.clone())));
+	self.lambda(args.as_slice(), self.t_void.clone(), body)
+    }
 
     pub fn lambda(
 	&self,
@@ -640,6 +694,25 @@ impl Builder {
 
     pub fn typedef(&self, name: &str, t: TypeExpr) -> Node<Statement> {
 	Node::new(Statement::TypeDef(name.to_string(), t))
+    }
+
+    // XXX: So far as I can tell this only gets used in the tests in parser.rs.
+    //
+    // It is really just a short-hand around cond clauses. I believe
+    // the statement variants of cond were actually factored out of
+    // grammar.lalrpop.
+    pub fn guard(
+	&self,
+	clauses: &[(SubExpr, SubExpr)],
+	default: Option<Node<Statement>>
+    ) -> Node<Statement> {
+	let default = if let Some(default) = default {
+            self.block(&[default], self.void.clone())
+	} else {
+            self.void.clone()
+	};
+
+	self.expr_for_effect(self.cond(clauses, default))
     }
 
     pub fn list_iter(

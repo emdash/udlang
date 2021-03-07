@@ -387,30 +387,11 @@ impl TypeChecker {
 mod tests {
     use super::*;
     #[allow(unused_imports)]
+    #[macro_use]
     use crate::ast;
     #[allow(unused_imports)]
+    #[macro_use]
     use crate::ast::*;
-
-    // Associative list macro, to go along with vec!
-    //
-    // Actually it really constructs an associative list, and then
-    // `collect()`s it.
-    macro_rules! alist(
-        { $($key:expr => $value:expr),* } => {
-            [ $( ($key, $value)),* ]
-        }
-    );
-
-    
-    // Construct containers from an alist
-    //
-    // Actually it really constructs an associative list, and then
-    // `collect()`s it.
-    macro_rules! map(
-        { $($key:expr => $value:expr),* } => {
-            [ $( ($key.to_string(), $value)),* ].iter().cloned().collect()
-        }
-    );
 
     // Assert that expr evaluated in env has type t.
     fn assert_types_to(env: Env<TypeTag>, expr: &Expr, t: &TypeExpr) {
