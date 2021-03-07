@@ -31,22 +31,25 @@ mod tests {
     // Helper functions for test cases.
 
     fn assert_expr(text: &'static str, ast: ast::SubExpr) {
+	let builder = ast::Builder::new();
         assert_eq!(
-            Node::new(grammar::ExprParser::new().parse(text).unwrap()),
+            Node::new(grammar::ExprParser::new().parse(&builder, text).unwrap()),
             ast
         );
     }
 
     fn assert_statement(text: &'static str, ast: Node<Statement>) {
+	let builder = ast::Builder::new();
         assert_eq!(
-            Node::new(grammar::StatementParser::new().parse(text).unwrap()),
+            Node::new(grammar::StatementParser::new().parse(&builder, text).unwrap()),
             ast
         );
     }
 
     fn assert_type(text: &'static str, ast: ast::Node<TypeTag>) {
+	let builder = ast::Builder::new();
         assert_eq!(
-	    Node::new(grammar::TypeParser::new().parse(text).unwrap()),
+	    Node::new(grammar::TypeParser::new().parse(&builder, text).unwrap()),
             ast
         );
     }

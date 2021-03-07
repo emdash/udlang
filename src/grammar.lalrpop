@@ -5,10 +5,11 @@
 
 use crate::ast;
 use crate::ast::Node;
+use crate::ast::Builder;
 use std::str::FromStr;
 
 
-grammar;
+grammar(ast: &Builder);
 
 
 // Program Entry Point
