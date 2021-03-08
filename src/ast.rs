@@ -40,26 +40,6 @@ pub type AList<T> = Vec<(String, Node<T>)>;
 pub type Map<T> = HashMap<String, Node<T>>;
 
 
-pub fn to_seq<T>(items: Vec<T>) -> Seq<T> {
-    items.into_iter().map(|e| Node::new(e)).collect()
-}
-
-
-pub fn to_alist<T>(items: Vec<(String, T)>) -> AList<T> {
-    items.into_iter().map(|i| (i.0, Node::new(i.1))).collect()
-}
-
-
-pub fn to_map<T>(items: Vec<(String, T)>) -> Map<T> {
-    items.into_iter().map(|i| (i.0, Node::new(i.1))).collect()
-}
-
-
-pub fn map_to_seq<T>(items: &Map<T>) -> Seq<T> {
-    items.iter().map(|i| i.1.clone()).collect()
-}
-
-
 // Arithmetic and logic operations
 #[derive(Copy, Clone, Debug, PartialEq, Eq)]
 pub enum BinOp {
@@ -170,42 +150,10 @@ pub enum Expr {
 }
 
 
-// There are two APIs which wrap the AST Types.
+// Collect a slice of pairs into an AList.
 //
-// This the older one, used by the parser, and it was written in
-// parallel with the parser. There are some issues here.
-//
-// In general, this set of functions deals with the plain Enum, not
-// wrapped in Node<>, but will implicitly wrap internal elements with
-// Node::new(). This fits the shape of the parser a slightly better.
-//
-// However, it is really clumsy for writing unit tests, because calls
-// to Node::new() end up proliferating everywhere.
-//
-// The other porblem here is that because this API uses free functions
-// rather than methods, there's no easy way to extend it to allow
-// re-using nodes.
-
-pub fn s(s: &str) -> String {
-    String::from(s)
-}
-
-
-pub fn string(st: &str) -> Expr {
-    Expr::Str(s(st))
-}
-
-
-pub fn list(items: Vec<Expr>) -> Expr {
-    Expr::List(to_seq(items))
-}
-
-
-pub fn map(items: Vec<(String, Expr)>) -> Expr {
-    Expr::Map(to_map(items))
-}
-
-
+// Basically, wouldn't be needed but for the distinction between []
+// and Vec, &str and string.
 pub fn alist<T: Clone>(items: &[(&str, T)]) -> Vec<(String, T)> {
     items
 	.iter()
@@ -214,6 +162,8 @@ pub fn alist<T: Clone>(items: &[(&str, T)]) -> Vec<(String, T)> {
 }
 
 
+// XXX: This function is a candidate for removal, but keeping it for
+// now since it expresses some logic.
 pub fn union(lhs: TypeTag, rhs: TypeTag) -> TypeTag {
     // automatically flatten unions together while we build the tree.
     // Obviously this isn't efficient in terms of allocations. But
@@ -242,86 +192,6 @@ pub fn union(lhs: TypeTag, rhs: TypeTag) -> TypeTag {
 }
 
 
-pub fn bin(op: BinOp, lhs: Expr, rhs: Expr) -> Expr {
-    Expr::BinOp(op, Node::new(lhs), Node::new(rhs))
-}
-
-
-pub fn un(op: UnOp, operand: Expr) -> Expr {
-    Expr::UnOp(op, Node::new(operand))
-}
-
-
-pub fn id(name: &'static str) -> Expr {
-    Expr::Id(String::from(name))
-}
-
-
-pub fn call(func: Expr, args: Vec<Expr>) -> Expr {
-    Expr::Call(Node::new(func), to_seq(args))
-}
-
-
-pub fn template_call(func: Expr, args: Vec<Expr>, delegate: Expr) -> Statement {
-    let mut args = args;
-    // Construct a closure using block and append to arglist.
-    args.push(lambda(vec!{}, TypeTag::Void, delegate));
-    expr_for_effect(call(func, args))
-}
-
-
-pub fn dot(obj: Expr, id: &str) -> Expr {
-    Expr::Dot(Node::new(obj), String::from(id))
-}
-
-
-pub fn index(obj: Expr, e: Expr) -> Expr {
-    Expr::Index(Node::new(obj), Node::new(e))
-}
-
-// XXX: this gets better if we use Option<Expr> for default
-pub fn cond(cases: Vec<(Expr, Expr)>, default: Expr) -> Expr {
-    let cases = cases
-	.iter()
-	.cloned()
-	.map(|case| (Node::new(case.0), Node::new(case.1)))
-	.collect();
-    Expr::Cond(cases, Node::new(default))
-}
-
-
-pub fn expr_block(stmts: Vec<Statement>, ret: Expr) -> Expr {
-    Expr::Block(to_seq(stmts), Node::new(ret))
-}
-
-
-pub fn lambda(
-    args: AList<TypeTag>,
-    ret: TypeTag,
-    body: Expr
-) -> Expr {
-    Expr::Lambda(args, Node::new(ret), Node::new(body))
-}
-
-
-pub fn template(
-    args: AList<TypeTag>,
-    delegate: &str,
-    body: Expr
-) -> Expr {
-    let mut args = args;
-    let ret = Node::new(TypeTag::Void);
-    // Fold the delegate argument into the arglist.
-    args.push(
-	(
-	    delegate.to_string(),
-	    Node::new(TypeTag::Lambda(vec!{}, ret))
-	)
-    );
-    lambda(args, TypeTag::Void, body)
-}
-
-
 // ADT for effects and structure
 #[derive(Clone, Debug, PartialEq)]
 pub enum Statement {
@@ -343,89 +213,8 @@ pub enum Statement {
 }
 
 
-pub fn expr_for_effect(expr: Expr) -> Statement {
-    match &expr {
-        Expr::Block(stmts, node) => match node.deref() {
-            Expr::Void => if stmts.len() == 1 {
-                stmts[0].deref().clone()
-            } else {
-                Statement::ExprForEffect(Node::new(expr))
-            },
-            _ => Statement::ExprForEffect(Node::new(expr))
-        },
-        _ => Statement::ExprForEffect(Node::new(expr))
-    }
-}
-
-
-pub fn statement_block(statements: Vec<Statement>) -> Statement {
-    Statement::ExprForEffect(Rc::new(expr_block(statements, Expr::Void)))
-}
-
-
-pub fn emit(name: &str, exprs: Vec<Expr>) -> Statement {
-    Statement::Emit(String::from(name), to_seq(exprs))
-}
-
-
-pub fn def(name: &str, expr: Expr) -> Statement {
-    Statement::Def(String::from(name), Node::new(expr))
-}
-
-
-pub fn typedef(name: &str, t: TypeTag) -> Statement {
-    Statement::TypeDef(String::from(name), Node::new(t))
-}
-
-
-pub fn list_iter(name: &str, list: Expr, body: Statement) -> Statement {
-    Statement::ListIter(
-        String::from(name),
-        Node::new(list),
-        Node::new(body)
-    )
-}
-
-
-pub fn map_iter(
-    key: &str,
-    value: &str,
-    map: Expr,
-    body: Statement
-) -> Statement {
-    Statement::MapIter(
-        String::from(key),
-        String::from(value),
-        Node::new(map),
-        Node::new(body)
-    )
-}
-
-
-pub fn while_(cond: Expr, body: Statement) -> Statement {
-    Statement::While(Node::new(cond), Node::new(body))
-}
-
-
-pub fn guard(
-    clauses: Vec<(Expr, Statement)>,
-    default: Option<Statement>
-) -> Statement {
-    let clauses = clauses
-        .into_iter()
-        .map(|x| (x.0, expr_block(vec!{x.1}, Expr::Void)))
-        .collect();
-
-    let default = if let Some(default) = default {
-        expr_block(vec!{default}, Expr::Void)
-    } else {
-        Expr::Void
-    };
-
-    expr_for_effect(cond(clauses, default))
-}
-
-
+// XXX: Should there be a a wrapped type equivalent for the underlying
+// enums? Or is it better not to hide the Node<> wrapping?
 pub type SubExpr = Node<Expr>;
 type TypeExpr = Node<TypeTag>;
 
@@ -471,6 +260,8 @@ pub struct Builder {
 // Keep this API in sync with the grammar, and the underlying
 // enumerations.
 impl Builder {
+    // This constructor allocates a new Builder, and initializes some
+    // leaf nodes that can be trivially shared.
     pub fn new() -> Self {
 	Self {
 	    void    : Node::new(Expr::Void),
@@ -509,7 +300,8 @@ impl Builder {
 	Node::new(s)
     }
 
-    // ** Every variant in Expr gets a short-hand method in this section **
+    // ** Every variant in Statement, Expr, etc gets a short-hand
+    // method in this section **
     //
     // In general, these should return a value wrapped in Node<> which
     // has been memoized where possible.
@@ -665,6 +457,7 @@ impl Builder {
     pub fn record(&self, members: &[(&str, Member)]) -> TypeExpr {
 	let members = members
 	    .iter()
+	    // XXX: This useage of Node::new is acceptable for now.
 	    .map(|m| (m.0.to_string(), Node::new(m.1.clone())))
 	    .collect();
 	self.type_(TypeTag::Record(members))
@@ -738,11 +531,9 @@ impl Builder {
 	Node::new(Statement::Emit(name.to_string(), exprs))
     }
 
-
     pub fn def(&self, name: &str, expr: SubExpr) -> Node<Statement> {
 	Node::new(Statement::Def(name.to_string(), expr))
     }
-
 
     pub fn typedef(&self, name: &str, t: TypeExpr) -> Node<Statement> {
 	Node::new(Statement::TypeDef(name.to_string(), t))

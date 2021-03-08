@@ -292,8 +292,10 @@ impl TypeChecker {
         let result = self.eval_expr(expr)?;
         match result.deref() {
             TypeTag::Map(item_type) => Ok(item_type.clone()),
-	    TypeTag::MapExpr(items) => Ok(Self::narrow(map_to_seq(items))),
-            _                       => Err(NotIterable(result))
+	    TypeTag::MapExpr(items) => Ok(Self::narrow(
+		items.values().cloned().collect())
+	    ),
+	    _                       => Err(NotIterable(result))
         }
     }
 
