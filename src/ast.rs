@@ -4,10 +4,8 @@ use std::rc::Rc;
 use std::ops::Deref;
 
 
-// Associative list macro, to go along with vec!
-//
-// Actually it really constructs an associative list, and then
-// `collect()`s it.
+// Associative list macro for slices of named pairs with python-like
+// syntax.
 #[macro_export]
 macro_rules! alist(
     { $($key:expr => $value:expr),* } => {
@@ -16,14 +14,15 @@ macro_rules! alist(
 );
 
 
-// Construct containers from an alist
-//
-// Actually it really constructs an associative list, and then
-// `collect()`s it.
+// Like the above, but implicitly uses String instead of &str, and
+// creates a collection instead of a slice.
 #[macro_export]
 macro_rules! map(
     { $($key:expr => $value:expr),* } => {
-        [ $( ($key.to_string(), $value)),* ].iter().cloned().collect()
+        [ $( ($key.to_string(), $value)),* ]
+	    .iter()
+	    .cloned()
+	    .collect()
     }
 );
 
@@ -58,19 +57,6 @@ pub fn to_map<T>(items: Vec<(String, T)>) -> Map<T> {
 
 pub fn map_to_seq<T>(items: &Map<T>) -> Seq<T> {
     items.iter().map(|i| i.1.clone()).collect()
-}
-
-
-// Enum for cairo-specific operations
-#[derive(Copy, Clone, Debug, PartialEq, Eq)]
-pub enum CairoOp {
-    SetSourceRgb,
-    SetSourceRgba,
-    Rect,
-    Fill,
-    Stroke,
-    Paint
-    // TODO: the rest of the api
 }
 
 
@@ -184,6 +170,22 @@ pub enum Expr {
 }
 
 
+// There are two APIs which wrap the AST Types.
+//
+// This the older one, used by the parser, and it was written in
+// parallel with the parser. There are some issues here.
+//
+// In general, this set of functions deals with the plain Enum, not
+// wrapped in Node<>, but will implicitly wrap internal elements with
+// Node::new(). This fits the shape of the parser a slightly better.
+//
+// However, it is really clumsy for writing unit tests, because calls
+// to Node::new() end up proliferating everywhere.
+//
+// The other porblem here is that because this API uses free functions
+// rather than methods, there's no easy way to extend it to allow
+// re-using nodes.
+
 pub fn s(s: &str) -> String {
     String::from(s)
 }
@@ -277,7 +279,7 @@ pub fn index(obj: Expr, e: Expr) -> Expr {
     Expr::Index(Node::new(obj), Node::new(e))
 }
 
-
+// XXX: this gets better if we use Option<Expr> for default
 pub fn cond(cases: Vec<(Expr, Expr)>, default: Expr) -> Expr {
     let cases = cases
 	.iter()
@@ -437,9 +439,10 @@ pub struct Program {
 }
 
 
-// Helper object for building expressions concisely.
+// This type would be unnecessary but for the need to abstract over
+// memory management patterns.
 //
-// Takes care of caching and sharing node values where possible.
+// Concretely, this struct is used for ast node re-use.
 pub struct Builder {
     // Singleton values that can be used directly
     pub void:  SubExpr,
@@ -456,6 +459,17 @@ pub struct Builder {
 }
 
 
+// This api abstracts over memory management for the underlying
+// enumerations.
+//
+// It does this by:
+// - consistently consuming and returning the wrapped
+//   Node<E>, where E is the underlying enumeration.
+// - consistently consuming &[Node<E>], where collections are needed.
+// - consistently consuming &str, where string values are needed.
+//
+// Keep this API in sync with the grammar, and the underlying
+// enumerations.
 impl Builder {
     pub fn new() -> Self {
 	Self {
@@ -499,6 +513,8 @@ impl Builder {
     //
     // In general, these should return a value wrapped in Node<> which
     // has been memoized where possible.
+    //
+    // *** There should be no usage of Node::new() below this line! ***
 
     pub fn b(&self, value: bool) -> SubExpr {
 	self.subexpr(Expr::Bool(value))
@@ -548,6 +564,7 @@ impl Builder {
     pub fn cond(
 	&self,
 	conds: &[(SubExpr, SubExpr)],
+	// XXX: Maybe use Option<SubExpr> here
 	else_: SubExpr
     ) -> SubExpr {
 	let conds = conds.iter().cloned().collect();
@@ -645,12 +662,45 @@ impl Builder {
 	self.type_(TypeTag::MapExpr(fields))
     }
 
-    pub fn record(&self, fields: &[(&str, Member)]) -> TypeExpr {
-	let fields = fields
+    pub fn record(&self, members: &[(&str, Member)]) -> TypeExpr {
+	let members = members
 	    .iter()
-	    .map(|field| (field.0.to_string(), Node::new(field.1.clone())))
+	    .map(|m| (m.0.to_string(), Node::new(m.1.clone())))
 	    .collect();
-	self.type_(TypeTag::Record(fields))
+	self.type_(TypeTag::Record(members))
+    }
+
+    pub fn field<'a>(&self, name: &'a str, t: TypeExpr) -> (&'a str, Member) {
+	(name, Member::Field(t))
+    }
+
+    pub fn method<'a, 'b>(
+	&self,
+	name: &'a str,
+	args: &'b [(&'b str, TypeExpr)],
+	ret: TypeExpr,
+	body: SubExpr
+    ) -> (&'a str, Member) {
+	(name, Member::Method(alist(args), ret, body))
+    }
+    
+    pub fn static_val<'a>(
+	&self,
+	name: &'a str,
+	t: TypeExpr,
+	v: SubExpr
+    ) -> (&'a str, Member) {
+	(name, Member::StaticValue(t, v))
+    }
+
+    pub fn static_method<'a, 'b>(
+	&self,
+	name: &'a str,
+	args: &'b [(&'b str, TypeExpr)],
+	ret: TypeExpr,
+	body: SubExpr
+    ) -> (&'a str, Member) {
+	(name, Member::StaticMethod(alist(args), ret, body))
     }
 
     pub fn t_lambda(&self, fields: &[TypeExpr], ret: TypeExpr) -> TypeExpr {
@@ -665,6 +715,7 @@ impl Builder {
     // their current form.
 
     // ** Statements here ***
+
     pub fn expr_for_effect(&self, expr: SubExpr) -> Node<Statement> {
 	match expr.deref() {
             Expr::Block(stmts, node) => match node.deref() {

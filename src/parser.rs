@@ -33,7 +33,7 @@ mod tests {
     fn assert_expr(text: &'static str, ast: ast::SubExpr) {
 	let builder = ast::Builder::new();
         assert_eq!(
-            Node::new(grammar::ExprParser::new().parse(&builder, text).unwrap()),
+            grammar::ExprParser::new().parse(&builder, text).unwrap(),
             ast
         );
     }
@@ -41,7 +41,7 @@ mod tests {
     fn assert_statement(text: &'static str, ast: Node<Statement>) {
 	let builder = ast::Builder::new();
         assert_eq!(
-            Node::new(grammar::StatementParser::new().parse(&builder, text).unwrap()),
+            grammar::StatementParser::new().parse(&builder, text).unwrap(),
             ast
         );
     }
@@ -49,7 +49,7 @@ mod tests {
     fn assert_type(text: &'static str, ast: ast::Node<TypeTag>) {
 	let builder = ast::Builder::new();
         assert_eq!(
-	    Node::new(grammar::TypeParser::new().parse(&builder, text).unwrap()),
+	    grammar::TypeParser::new().parse(&builder, text).unwrap(),
             ast
         );
     }

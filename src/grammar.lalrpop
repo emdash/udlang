@@ -13,12 +13,12 @@ grammar(ast: &Builder);
 
 
 // Program Entry Point
-pub Program: Vec<ast::Statement>
+pub Program: ast::Seq<ast::Statement>
     = "Version" ":" ".1-alpha" ";" <Statement*>;
 
 
 // Statement entry point.
-pub Statement: ast::Statement = {
+pub Statement: Node<ast::Statement> = {
     FuncDef,
     ProcDef,
     TypeDef,
@@ -30,80 +30,80 @@ pub Statement: ast::Statement = {
 
 
 // Expression entry point.
-pub Expr: ast::Expr = {
+pub Expr: Node<ast::Expr> = {
     Block,
-    SimpleExpr,
+    SimpleExpr
 }
 
 
 // Type Entry Point
-pub Type: ast::TypeTag = TypeExpr;
+pub Type: Node<ast::TypeTag> = TypeExpr;
 
 
 // Syntactic sugar for Union(a, b)
-pub TypeExpr: ast::TypeTag = {
-    <a:TypeExpr> "|" <b:TypeCons> => ast::union(a, b),
+pub TypeExpr: Node<ast::TypeTag> = {
+    <a:TypeExpr> "|" <b:TypeCons> => ast.union(&[a, b]),
     // If we had a Sum type, it would go here, and would look like this.
-    //<a:TypeExpr> "+" <b:TypeCons> => ast::TypeTag::Sum(Node::new(a), Node::new(b)),
-    <TypeCons>   "?"              => ast::TypeTag::Option(Node::new(<>)),
-    TypeCons
+    // <a:TypeExpr> "+" <b:TypeCons> => ast.sum(&[a, b]),
+    <TypeCons>   "?"              => ast.option(<>),
+    TypeCons,
 }
 
 
 // Application of a type-level function: a type constructor.
-pub TypeCons: ast::TypeTag = {
+pub TypeCons: Node<ast::TypeTag> = {
     <cons:TypeCons> "<" <types:Comma<Type>> ">"
-    	=> ast::TypeTag::TypeCons(ast::Node::new(cons), ast::to_seq(types)),
+	=> Node::new(ast::TypeTag::TypeCons(cons, types.to_vec())),
     TypeTerm
 }
 
 
 // A primitive type, or a grouping of subtypes.
-pub TypeTerm: ast::TypeTag = {
-    "Void"                      => ast::TypeTag::Void,
-    "Bool"                      => ast::TypeTag::Bool,
-    "Int"                       => ast::TypeTag::Int,
-    "Float"                     => ast::TypeTag::Float,
-    "Str"                       => ast::TypeTag::Str,
-    "Point"                     => ast::TypeTag::Point,
-    "Self"                      => ast::TypeTag::This,                    
-    <TypeName>                  => ast::TypeTag::TypeName(<>.to_string()),
+pub TypeTerm: Node<ast::TypeTag> = {
+    "Void"                      => ast.t_void.clone(),
+    "Bool"                      => ast.t_bool.clone(),
+    "Int"                       => ast.t_int.clone(),
+    "Float"                     => ast.t_float.clone(),
+    "Str"                       => ast.t_str.clone(),
+    "Point"                     => ast.t_point.clone(),
+    "Self"                      => ast.t_this.clone(),
+    <TypeName>                  => ast.type_name(<>),
     <Record>                    => <>,
     "(" <Type> ")"              => <>,
-    "<" <items:Comma<Type>> ">" => ast::TypeTag::Tuple(ast::to_seq(items)),
-    "[" <items:Type> "]"        => ast::TypeTag::List(ast::Node::new(items))
+    "<" <items:Comma<Type>> ">" => ast.tuple(&items),
+    "[" <item:Type> "]"         => ast.t_list(item)
 }
 
 
 // Record types
-pub Record: ast::TypeTag
+pub Record: Node<ast::TypeTag>
     = "{" <members:Semicolon<Member>> "}"
-    => ast::TypeTag::Record(ast::to_alist(members));
+    => ast.record(&members);
 
 
 // Any field in a record type.
-pub Member: (String, ast::Member) = {
+pub Member: (&'input str, ast::Member) = {
     "field" <name:Id> ":" <t:Type>
-	=> (name, ast::Member::Field(ast::Node::new(t))),
+	=> ast.field(name, t),
     "method" <name:Id> <args:Arglist> "->" <ret:Type> "=" <body:Expr>
-	=> (name, ast::Member::Method(args, Node::new(ret), Node::new(body))),
+	=> ast.method(name, &args, ret, body),
     "const" <name:Id> ":" <t:Type> "=" <value:Expr>
-	=> (name, ast::Member::StaticValue(Node::new(t), ast::Node::new(value))),
+	=> ast.static_val(name, t, value),
     "static" <name:Id> <args:Arglist> "->" <ret:Type> "=" <body:Expr>
-	=> (name, ast::Member::StaticMethod(args, Node::new(ret), Node::new(body)))
+	=> ast.static_method(name, &args, ret, body),
 }
 
 
 // Syntactic sugar for defining a function returning a value.
-FuncDef: ast::Statement
+FuncDef: Node<ast::Statement>
     = "func" <name:Id> <args:Arglist> "->" <ret:Type> <body:Block>
-    => ast::def(name.as_str(), ast::lambda(args, ret, body));
+    => ast.def(name, ast.lambda(&args, ret, body));
 
 
 // Syntatic sugar for defining a function which returns no value.
-ProcDef: ast::Statement
+ProcDef: Node<ast::Statement>
     = "proc" <name:Id> <args:Arglist> <body:Block>
-    => ast::def(name.as_str(), ast::lambda(args, ast::TypeTag::Void, body));
+    => ast.def(name, ast.lambda(&args, ast.t_void.clone(), body));
 
 
 // Syntactic sugar for defining a template function.
@@ -115,56 +115,51 @@ ProcDef: ast::Statement
 // Templates can be called with the TemplateCall syntax, which
 // consumes a trailing block. This allows defining library functions
 // which feel like control structures.
-TemplateDef: ast::Statement
+TemplateDef: Node<ast::Statement>
     = "template" <name:Id> <args:Arglist> "using" <delegate:Id> <body:Block>
-    => ast::def(name.as_str(), ast::template(args, delegate.as_str(), body));
+    => ast.def(name, ast.template(&args, delegate, body));
 
 
 // The only way to introduce a type binding
-TypeDef: ast::Statement
+TypeDef: Node<ast::Statement>
     = "type" <name:TypeName> ":" <t:Type> ";"
-    => ast::typedef(name.as_str(), t);
+    => ast.typedef(name, t);
 
 
 // Used for raw cairo operations.
-Effect: ast::Statement
+Effect: Node<ast::Statement>
     = "out" <name:Id> <exprs:ExprList> ";"
-    => ast::emit(name.as_str(), exprs);
+    => ast.emit(name, &exprs);
 
 
 // Bind a name to a value.
-Let: ast::Statement
+Let: Node<ast::Statement>
     = "let" <name:Id> "=" <value:Expr> ";"
-    => ast::def(name.as_str(), value);
+    => ast.def(name, value);
 
 
 // An expression evaluated for its side effects in a statement context.
 //
 // To keep the LALRPOP happy, this is a subset of expressions.
-EffectExpr: ast::Statement = {
-    <Cond> => ast::expr_for_effect(<>),
+EffectExpr: Node<ast::Statement> = {
+    <Cond> => ast.expr_for_effect(<>),
     TemplateCall,
 }
 
 
 // Iterate over a collection.
-Iteration: ast::Statement = {
+Iteration: Node<ast::Statement> = {
     "for" <name:Id> "in" <list:Expr> <body:Block>
-	=> ast::list_iter(name.as_str(), list, ast::expr_for_effect(body)),
+	=> ast.list_iter(name, list, ast.expr_for_effect(body)),
     "for" "(" <key:Id> "," <value:Id> ")" "in" <map:Expr> <body:Block>
-	=> ast::map_iter(
-	    key.as_str(),
-	    value.as_str(),
-	    map,
-	    ast::expr_for_effect(body)
-	)
+	=> ast.map_iter(key, value, map, ast.expr_for_effect(body))
 }
 
 
 // Any expression which is not a Block.
 //
 // Needed to avoid the abiguity of nesting blocks.
-SimpleExpr: ast::Expr = {
+SimpleExpr: Node<ast::Expr> = {
     Lambda,
     Cond,
     Logic,
@@ -172,7 +167,7 @@ SimpleExpr: ast::Expr = {
 
 
 // An if-else chain
-Cond: ast::Expr
+Cond: Node<ast::Expr>
     = "if"
       <first:CondClause>
       <rest:("elif" <CondClause>)*>
@@ -180,34 +175,35 @@ Cond: ast::Expr
     => {
         let mut clauses = vec!{first};
         clauses.extend(rest);
-        ast::cond(clauses, default.unwrap_or(ast::Expr::Void))
+        ast.cond(clauses.as_slice(), default.unwrap_or(ast.void.clone()))
     }
 ;
 
 
 // Single clause in an if-else chain
-CondClause: (ast::Expr, ast::Expr) = {
-    "(" <pred: Expr> ")" <body: Block>
-        => (pred, body),
-}
+CondClause: (Node<ast::Expr>, Node<ast::Expr>)
+    = "(" <pred: Expr> ")" <body: Block>
+    => (pred, body);
 
 
 // Single paramater in a function signature
-Param: (String, ast::TypeTag) =
-    <name:Id> ":" <t:Type> => (name, t);
+Param: (&'input str, Node<ast::TypeTag>)
+    = <name:Id> ":" <t:Type>
+    => (name, t);
 
 
 // The argument list of a function signature
-Arglist: ast::AList<ast::TypeTag> =
-    "(" <args:Comma<Param>> ")" => ast::to_alist(args);
+Arglist: Vec<(&'input str, Node<ast::TypeTag>)>
+    = "(" <args:Comma<Param>> ")"
+    => args;
 
 
 // An anonymous function expression.
-Lambda: ast::Expr
+Lambda: Node<ast::Expr>
     = <args:Arglist> <ret:("->" <Type>)?> "=" <body:Expr>
-    => ast::lambda(
-	args,
-	ret.unwrap_or(ast::TypeTag::Void),
+    => ast.lambda(
+	&args,
+	ret.unwrap_or(ast.t_void.clone()),
 	body
     );
 
@@ -215,50 +211,51 @@ Lambda: ast::Expr
 // A sequence of statements treated as an expression.
 //
 // If the `yield` keyword is present, then this block has a value.
-Block: ast::Expr = {
+Block: Node<ast::Expr> = {
     "{" <stmts:Statement+> <ret:("yield" <SimpleExpr>)?> "}"
-        => ast::expr_block(stmts, ret.unwrap_or(ast::Expr::Void)),
-    "{" <ret:("yield" <SimpleExpr>)> "}" => ret,
+        => ast.block(&stmts, ret.unwrap_or(ast.void.clone())),
+    "{" <ret:("yield" <SimpleExpr>)> "}"
+	=> ret,
 }
 
 
 // Expression entry point anow, this is the logic operators. This way
 // sloppily-parenthesized logic hould do the least surprising thing.
-Logic: ast::Expr = {
-    <a:Logic> "and" <b:Rel> => ast::bin(ast::BinOp::And, a, b),
-    <a:Logic> "or"  <b:Rel> => ast::bin(ast::BinOp::Or, a, b),
-    <a:Logic> "xor" <b:Rel> => ast::bin(ast::BinOp::Xor, a, b),
+Logic: Node<ast::Expr> = {
+    <a:Logic> "and" <b:Rel> => ast.bin(ast::BinOp::And, a, b),
+    <a:Logic> "or"  <b:Rel> => ast.bin(ast::BinOp::Or, a, b),
+    <a:Logic> "xor" <b:Rel> => ast.bin(ast::BinOp::Xor, a, b),
     Rel
 }
 
 
 // Relational operators are the next highest precedence.
-Rel: ast::Expr = {
-    <a:Rel> "<"  <b:Sum> => ast::bin(ast::BinOp::Lt, a, b),
-    <a:Rel> ">"  <b:Sum> => ast::bin(ast::BinOp::Gt, a, b),
-    <a:Rel> "<=" <b:Sum> => ast::bin(ast::BinOp::Lte, a, b),
-    <a:Rel> ">=" <b:Sum> => ast::bin(ast::BinOp::Gte, a, b),
-    <a:Rel> "==" <b:Sum> => ast::bin(ast::BinOp::Eq, a, b),
+Rel: Node<ast::Expr> = {
+    <a:Rel> "<"  <b:Sum> => ast.bin(ast::BinOp::Lt, a, b),
+    <a:Rel> ">"  <b:Sum> => ast.bin(ast::BinOp::Gt, a, b),
+    <a:Rel> "<=" <b:Sum> => ast.bin(ast::BinOp::Lte, a, b),
+    <a:Rel> ">=" <b:Sum> => ast.bin(ast::BinOp::Gte, a, b),
+    <a:Rel> "==" <b:Sum> => ast.bin(ast::BinOp::Eq, a, b),
     Sum
 };
 
 
-Sum: ast::Expr = {
-    <a:Sum> "+" <b:Factor> => ast::bin(ast::BinOp::Add, a, b),
-    <a:Sum> "-" <b:Factor> => ast::bin(ast::BinOp::Sub, a, b),
+Sum: Node<ast::Expr> = {
+    <a:Sum> "+" <b:Factor> => ast.bin(ast::BinOp::Add, a, b),
+    <a:Sum> "-" <b:Factor> => ast.bin(ast::BinOp::Sub, a, b),
     Factor,
 };
 
 
-Factor: ast::Expr = {
-    <a:Factor> "*" <b:Exp> => ast::bin(ast::BinOp::Mul, a, b),
-    <a:Factor> "/" <b:Exp> => ast::bin(ast::BinOp::Div, a, b),
+Factor: Node<ast::Expr> = {
+    <a:Factor> "*" <b:Exp> => ast.bin(ast::BinOp::Mul, a, b),
+    <a:Factor> "/" <b:Exp> => ast.bin(ast::BinOp::Div, a, b),
     Exp
 };
 
 
-Exp: ast::Expr = {
-    <base:Exp> "^" <exp: InvTerm> => ast::bin(ast::BinOp::Pow, base, exp),
+Exp: Node<ast::Expr> = {
+    <base:Exp> "^" <exp: InvTerm> => ast.bin(ast::BinOp::Pow, base, exp),
     InvTerm
 }
 
@@ -267,9 +264,9 @@ Exp: ast::Expr = {
 // right thing. I.e. -foo() should parse as (- (foo)), not ((- foo)).
 //
 // The same thing applies to logical negation.
-InvTerm: ast::Expr = {
-    "-" <a:InvTerm> => ast::un(ast::UnOp::Neg, a),
-    "not" <a:InvTerm> => ast::un(ast::UnOp::Not, a),
+InvTerm: Node<ast::Expr> = {
+    "-" <a:InvTerm> => ast.un(ast::UnOp::Neg, a),
+    "not" <a:InvTerm> => ast.un(ast::UnOp::Not, a),
     Call
 };
 
@@ -281,46 +278,46 @@ InvTerm: ast::Expr = {
 //
 // To simplify the grammar, templates are assumed not to return a
 // value and are purely used for their effects.
-TemplateCall: ast::Statement = {
+TemplateCall: Node<ast::Statement> = {
     <func:Selection> "(" <args:ExprList> ")" <delegate:Block>
-	=> ast::template_call(func, args, delegate),
+	=> ast.template_call(func, &args, delegate),
     <func:Selection> "(" <args:ExprList> ")" ";"
-        => ast::expr_for_effect(ast::call(func, args))
+        => ast.expr_for_effect(ast.call(func, &args))
 };
 
 
 // We want indexing and selection to bind before function calls, so that
 // foo.bar(a) parses as ((dot foo bar) a), not (dot foo (bar a))
-Call: ast::Expr = {
-    <func:Call> "(" <args:ExprList> ")" => ast::call(func, args),
+Call: Node<ast::Expr> = {
+    <func:Call> "(" <args:ExprList> ")" => ast.call(func, &args),
     Selection
 }
 
 
 // XXX: see github issue #13
-Selection: ast::Expr = {
-    <obj:Selection> "." <id:Id> => ast::dot(obj, id.as_str()),
-    <obj:Selection> "[" <e:Expr> "]" => ast::index(obj, e),
+Selection: Node<ast::Expr> = {
+    <obj:Selection> "." <id:Id> => ast.dot(obj, id),
+    <obj:Selection> "[" <e:Expr> "]" => ast.index(obj, e),
     Term
 }
 
 
 // Literals of any type except lambdas.
-Term: ast::Expr = {
-    "self" => ast::Expr::This,
-    Id => ast::Expr::Id(<>),
-    Int => ast::Expr::Int(<>),
-    Float => ast::Expr::Float(<>),
-    Str => ast::Expr::Str(<>),
-    Boolean => ast::Expr::Bool(<>),
+Term: Node<ast::Expr> = {
+    "self" => ast.this.clone(),
+    Id => ast.id(<>),
+    Int => ast.i(<>),
+    Float => ast.f(<>),
+    Str => ast.s(<>),
+    Boolean => ast.b(<>),
     "(" <a:Expr> ")" => a,
-    "[" <l:ExprList> "]" => ast::list(l),
-    "{" <m:MapItems> "}" => ast::map(m),
+    "[" <l:ExprList> "]" => ast.list(&l),
+    "{" <m:MapItems> "}" => ast.map(&m),
 };
 
 
 // A single item in a map.
-MapItem: (String, ast::Expr) = {
+MapItem: (&'input str, Node<ast::Expr>) = {
     <k:Str> ":" <v:Logic> => (k, v),
     <k:Id> ":" <v:Logic> => (k, v)
 }
@@ -361,9 +358,9 @@ Semicolon<T>: Vec<T> = {
 
 
 // Terminals
-Int: i64 = r"-?[0-9]+" => i64::from_str(<>).unwrap();
-Float: f64 = r"-?[0-9]+\.[0-9]+" => f64::from_str(<>).unwrap();
-Id: String = r"[a-z_][A-Za-z0-9_]*" => <>.to_owned();
-TypeName: String = r"[A-Z][A-Za-z0-9_]*" => <>.to_owned();
-Boolean: bool = {"true" => true, "false" => false};
-Str: String = <s:r#""(([^\\"]|\\.)*)""#> => s[1..(s.len() - 1)].to_string();
+Int: i64              = r"-?[0-9]+" => i64::from_str(<>).unwrap();
+Float: f64            = r"-?[0-9]+\.[0-9]+" => f64::from_str(<>).unwrap();
+Id: &'input str       = r"[a-z_][A-Za-z0-9_]*" => <>;
+TypeName: &'input str = r"[A-Z][A-Za-z0-9_]*" => <>;
+Boolean: bool         = {"true" => true, "false" => false};
+Str: &'input str      = <s:r#""(([^\\"]|\\.)*)""#> => &s[1..(s.len() - 1)];
