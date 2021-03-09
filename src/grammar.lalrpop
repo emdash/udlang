@@ -37,15 +37,20 @@ pub Expr: ExprNode = {
 
 
 // Type Entry Point
-pub Type: TypeNode = TypeExpr;
+pub Type: TypeNode = TypeMaybe;
 
 
-// Syntactic sugar for Union(a, b)
-pub TypeExpr: TypeNode = {
-    <a:TypeExpr> "|" <b:TypeCons> => ast.union(&[a, b]),
+// Maybe type Union(a, b)
+pub TypeMaybe: TypeNode = {
     // If we had a Sum type, it would go here, and would look like this.
     // <a:TypeExpr> "+" <b:TypeCons> => ast.sum(&[a, b]),
-    <TypeCons>   "?"              => ast.option(<>),
+    <TypeUnion>   "?"              => ast.option(<>),
+    TypeUnion,
+}
+
+pub TypeUnion: TypeNode = {
+    "|" <TypeUnion> => <>,
+    <a:TypeCons> "|" <b:TypeUnion> => ast.union(&[a, b]),
     TypeCons,
 }
 
