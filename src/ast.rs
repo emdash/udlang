@@ -162,36 +162,6 @@ pub fn alist<T: Clone>(items: &[(&str, T)]) -> Vec<(String, T)> {
 }
 
 
-// XXX: This function is a candidate for removal, but keeping it for
-// now since it expresses some logic.
-pub fn union(lhs: TypeTag, rhs: TypeTag) -> TypeTag {
-    // automatically flatten unions together while we build the tree.
-    // Obviously this isn't efficient in terms of allocations. But
-    // we're hamstrung by the grammar.
-    match (lhs, rhs) {
-	(TypeTag::Union(lhs), TypeTag::Union(rhs)) => {
-	    let mut items = Vec::with_capacity(lhs.len() + rhs.len());
-	    items.extend(lhs.iter().cloned());
-	    items.extend(rhs.iter().cloned());
-	    TypeTag::Union(items)
-	}
-	(TypeTag::Union(lhs), rhs) => {
-	    let mut items = Vec::with_capacity(lhs.len() + 1);
-	    items.extend(lhs.iter().cloned());
-	    items.push(Node::new(rhs));
-	    TypeTag::Union(items)
-	},
-	(lhs, TypeTag::Union(rhs)) => {
-	    let mut items = Vec::with_capacity(rhs.len() + 1);
-	    items.push(Node::new(lhs));
-	    items.extend(rhs.iter().cloned());
-	    TypeTag::Union(items)
-	}
-	(lhs, rhs) => TypeTag::Union(vec!{Node::new(lhs), Node::new(rhs)})
-    }
-}
-
-
 // ADT for effects and structure
 #[derive(Clone, Debug, PartialEq)]
 pub enum Statement {
@@ -199,14 +169,6 @@ pub enum Statement {
     Emit(String, Seq<Expr>),
     Def(String, Node<Expr>),
     TypeDef(String, Node<TypeTag>),
-    // XXX: Body of MapIter / ListIter should be an expression. Then
-    // these themselves can be expressions, rather than statements.
-    //
-    // XXX: further, could we consider making fold and map part of the
-    // language, to be treated as core constructs, rather than
-    // higher-order procedures provided by a library.
-    //
-    // Alternatively, fold and map could be templates.
     ListIter(String, Node<Expr>, Node<Statement>),
     MapIter(String, String, Node<Expr>, Node<Statement>),
     While(Node<Expr>, Node<Statement>),
