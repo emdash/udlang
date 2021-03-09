@@ -1,5 +1,4 @@
 use std::collections::HashMap;
-//use std::collections::HashSet;
 use std::rc::Rc;
 use std::ops::Deref;
 
@@ -25,8 +24,6 @@ macro_rules! alist(
 
 // Like the above, but implicitly uses String instead of &str, and
 // creates a collection instead of a slice.
-// Associative list macro for slices of named pairs with python-like
-// syntax.
 //
 // Basically converts this:
 //
@@ -47,12 +44,47 @@ macro_rules! map(
     }
 );
 
+
+// Collect a slice of pairs into an AList.
+//
+// Basically, wouldn't be needed but for the distinction between []
+// and Vec, &str and string.
+//
+// Converts this:
+//
+// &[("foo", bar), ("baz", quux)]
+//
+// Into this:
+//
+// vec![("foo".to_string(), bar.clone()), ("baz".to_tring(), quux.clone())]
+//
+pub fn alist<T: Clone>(items: &[(&str, T)]) -> Vec<(String, T)> {
+    items
+	.iter()
+	.map(|i| (i.0.to_string(), i.1.clone()))
+	.collect()
+}
+
+
 // Convenience Type Aliases
 //
-// It's actually a bit tedious to work directly with the
-// enumerations. Calls to `Node::new()`, `.to_string()`, and `clone()`
-// proliferate everywhere, the enum variants can't live in the
-// top-level namespace, and etc.
+// Rust allows us to define the AST as an algebraic data type (ADT)
+// which is (roughly) isomorphic to the grammar. This means that, the
+// underlying data types are enumerations, or lists thereof, which are
+// composed to form the syntax tree.
+//
+// We can let exhaustivity analysis help us keep the catch mistakes as
+// the language evolves, and keep the code from descending into a mess
+// of type mismatches that has ultimately overtaken similar efforts
+// begun in other languages. Frankly, this is one of the main reasons
+// for chosing Rust for this project.
+//
+// Having said all that, I find it's actually a bit tedious to work
+// directly with the enumerations. Calls to `Node::new()`,
+// `.to_string()`, 'map`, and `clone()` proliferate everywhere, and
+// the code ends up looking far more intense than it really needs
+// to. It also becomes a pain to switch from, say, Box, to Rc, or some
+// *third* kind of allocation strategy.
 //
 // To abstract over various memory management strategies, and to help
 // cut down on syntactic noise and keep the code-base tight, I added
@@ -65,10 +97,6 @@ macro_rules! map(
 //
 // I think perhaps factoring this into a trait will make it easier to
 // implement bookeeping of source location info (for error reporting).
-//
-// Don't use the enumerations directly to build an AST. Use the
-// Builder API in this file to build an AST. When writing a visitor,
-// it is okay to use the raw enums in match patterns.
 pub type Node<T> = Rc<T>;
 pub type Seq<T> = Vec<Node<T>>;
 pub type PairSeq<T> = Vec<(Node<T>, Node<T>)>;
@@ -78,6 +106,22 @@ pub type ExprNode = Node<Expr>;
 pub type TypeNode = Node<TypeTag>;
 pub type StmtNode = Node<Statement>;
 
+
+// *** ADT ********************************************************************
+
+// These are the underlying types which roughly correspond to the
+// productions in grammar.lalrpop.
+//
+// Don't use the enumerations directly to build an AST. Use the
+// Builder API in this file instead.
+//
+// When writing a visitor, it is okay to use the raw enums in match
+// patterns, but avoid any `_` default match arms so that exhaustivity
+// analysis can play its proper role in catching bugs.
+//
+// Do use the Builder API for transformations on the syntax tree,
+// since this will allow preserving source location information across
+// transformations.
 
 // Arithmetic and logic operations
 #[derive(Copy, Clone, Debug, PartialEq, Eq)]
@@ -189,28 +233,7 @@ pub enum Expr {
 }
 
 
-// Collect a slice of pairs into an AList.
-//
-// Basically, wouldn't be needed but for the distinction between []
-// and Vec, &str and string.
-//
-// Converts this:
-//
-// &[("foo", bar), ("baz", quux)]
-//
-// Into this:
-//
-// vec![("foo".to_string(), bar.clone()), ("baz".to_tring(), quux.clone())]
-//
-pub fn alist<T: Clone>(items: &[(&str, T)]) -> Vec<(String, T)> {
-    items
-	.iter()
-	.map(|i| (i.0.to_string(), i.1.clone()))
-	.collect()
-}
-
-
-// ADT for effects and structure
+// ADT for effects and control-flow.
 #[derive(Clone, Debug, PartialEq)]
 pub enum Statement {
     ExprForEffect(ExprNode),
@@ -223,7 +246,7 @@ pub enum Statement {
 }
 
 
-// ADT for programs
+// The entire program.
 #[derive(Clone, Debug, PartialEq)]
 pub struct Program {
     pub description: String,
@@ -232,10 +255,14 @@ pub struct Program {
 }
 
 
-// This type would be unnecessary but for the need to abstract over
-// memory management patterns.
-//
-// Concretely, this struct is used for ast node re-use.
+/**** AST Builder API ********************************************************/
+
+
+// This type is not strictly necessary, but it does cut down on the
+// syntactic noise and verbosity when constructing ASTs. It also helps
+// with separating implementation concerns (like source location info
+// and node sharing to cut down memory usage) from the underlying
+// structure of the ADT.
 pub struct Builder {
     // Singleton values that can be used directly
     pub void:  ExprNode,
@@ -249,11 +276,16 @@ pub struct Builder {
     pub t_str:   TypeNode,
     pub t_any:   TypeNode,
     pub t_this:  TypeNode,
+    // TBD: hashtables to cache constants, strings, exprs, and
+    // statements.
 }
 
 
-// This api abstracts over memory management for the underlying
-// enumerations.
+// Use this structure to build ASTs.
+//
+// This api abstracts over memory management and other implementation
+// concerns. Roughly speaking, there's a method here for every
+// production in the grammar, though it's not perfectly 1-to-1.
 //
 // It does this by:
 // - consistently consuming and returning the wrapped
