@@ -18,6 +18,7 @@
 #[macro_use]
 extern crate lalrpop_util;
 
+#[macro_use]
 pub mod ast;
 pub mod env;
 lalrpop_mod!(pub grammar);
