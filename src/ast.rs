@@ -105,6 +105,7 @@ pub type Map<T> = HashMap<String, Node<T>>;
 pub type ExprNode = Node<Expr>;
 pub type TypeNode = Node<TypeTag>;
 pub type StmtNode = Node<Statement>;
+pub type MemberNode = Node<Member>;
 
 
 // *** ADT ********************************************************************
@@ -336,6 +337,11 @@ impl Builder {
 	Node::new(s)
     }
 
+    // Like above, but for record members
+    pub fn member(&self, m: Member) -> MemberNode {
+	Node::new(m)
+    }
+
     // ** Every variant in Statement, Expr, etc gets a short-hand
     // method in this section **
     //
@@ -493,8 +499,7 @@ impl Builder {
     pub fn record(&self, members: &[(&str, Member)]) -> TypeNode {
 	let members = members
 	    .iter()
-	    // XXX: This useage of Node::new is acceptable for now.
-	    .map(|m| (m.0.to_string(), Node::new(m.1.clone())))
+	    .map(|m| (m.0.to_string(), self.member(m.1.clone())))
 	    .collect();
 	self.type_(TypeTag::Record(members))
     }
@@ -551,11 +556,11 @@ impl Builder {
 		Expr::Void => if stmts.len() == 1 {
                     stmts[0].clone()
 		} else {
-                    Node::new(Statement::ExprForEffect(expr))
+                    self.statement(Statement::ExprForEffect(expr))
 		},
-		_ => Node::new(Statement::ExprForEffect(expr))
+		_ => self.statement(Statement::ExprForEffect(expr))
             },
-            _ => Node::new(Statement::ExprForEffect(expr))
+            _ => self.statement(Statement::ExprForEffect(expr))
 	}
     }
 
@@ -564,21 +569,21 @@ impl Builder {
 	    .iter()
 	    .cloned()
 	    .collect();
-	Node::new(Statement::Emit(name.to_string(), exprs))
+	self.statement(Statement::Emit(name.to_string(), exprs))
     }
 
     pub fn def(&self, name: &str, expr: ExprNode) -> StmtNode {
-	Node::new(Statement::Def(name.to_string(), expr))
+	self.statement(Statement::Def(name.to_string(), expr))
     }
 
     pub fn typedef(&self, name: &str, t: TypeNode) -> StmtNode {
-	Node::new(Statement::TypeDef(name.to_string(), t))
+	self.statement(Statement::TypeDef(name.to_string(), t))
     }
 
     // This method is only used in unit tests in parser.rs.
     //
     // It is really just a short-hand around cond clauses. It could be
-    // removed, and the tests re-written.
+    // removed, and the tests re-written.x
     pub fn guard(
 	&self,
 	clauses: &[(ExprNode, ExprNode)],
@@ -598,7 +603,7 @@ impl Builder {
 	name: &str, list: ExprNode,
 	body: StmtNode
     ) -> StmtNode {
-	Node::new(
+	self.statement(
 	    Statement::ListIter(
 		name.to_string(),
 		list,
@@ -614,7 +619,7 @@ impl Builder {
 	map: ExprNode,
 	body: StmtNode
     ) -> StmtNode {
-	Node::new(Statement::MapIter(
+	self.statement(Statement::MapIter(
             String::from(key),
             String::from(value),
             map,
