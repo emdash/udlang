@@ -575,11 +575,10 @@ impl Builder {
 	Node::new(Statement::TypeDef(name.to_string(), t))
     }
 
-    // XXX: So far as I can tell this only gets used in the tests in parser.rs.
+    // This method is only used in unit tests in parser.rs.
     //
-    // It is really just a short-hand around cond clauses. I believe
-    // the statement variants of cond were actually factored out of
-    // grammar.lalrpop.
+    // It is really just a short-hand around cond clauses. It could be
+    // removed, and the tests re-written.
     pub fn guard(
 	&self,
 	clauses: &[(ExprNode, ExprNode)],
