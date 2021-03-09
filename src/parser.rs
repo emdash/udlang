@@ -709,6 +709,109 @@ mod tests {
 	);
     }
 
+
+    #[test]
+    fn test_type_union() {
+	let ast = Builder::new();
+
+	assert_type(
+	    r#"Int | Float"#,
+	    ast.union(&[ast.t_int.clone(), ast.t_float.clone()])
+	);
+
+	assert_type(
+	    r#"| Int"#,
+	    ast.t_int.clone()
+	);
+
+	assert_type(
+	    r#"| Int | Float"#,
+	    ast.union(&[ast.t_int.clone(), ast.t_float.clone()])
+	);
+
+	assert_type(
+	    r#"Int | Float | Str"#,
+	    ast.union(&[ast.t_int.clone(), ast.union(&[
+		ast.t_float.clone(),
+		ast.t_str.clone()
+	    ])])
+	);
+
+	assert_type(
+	    r#"| Int | Float | Str"#,
+	    ast.union(&[ast.t_int.clone(), ast.union(&[
+		ast.t_float.clone(),
+		ast.t_str.clone()
+	    ])])
+	);
+
+	assert_type(
+	    r#"| Int | [Int] | Str"#,
+	    ast.union(&[ast.t_int.clone(), ast.union(&[
+		ast.t_list(ast.t_int.clone()),
+		ast.t_str.clone()
+	    ])])
+	); 
+
+	assert_type(
+	    r#"[Int | [Int] | Str]"#,
+	    ast.t_list(
+		ast.union(&[ast.t_int.clone(), ast.union(&[
+		    ast.t_list(ast.t_int.clone()),
+		    ast.t_str.clone()
+		])])
+	    )
+	);
+
+	assert_type(
+	    r#"[| Int | [Int] | Str]"#,
+	    ast.t_list(
+		ast.union(&[ast.t_int.clone(), ast.union(&[
+		    ast.t_list(ast.t_int.clone()),
+		    ast.t_str.clone()
+		])])
+	    )
+	);
+
+	assert_type(
+	    r#"| [| Int | [Int] | Str]"#,
+	    ast.t_list(
+		ast.union(&[ast.t_int.clone(), ast.union(&[
+		    ast.t_list(ast.t_int.clone()),
+		    ast.t_str.clone()
+		])])
+	    )
+	);
+
+	assert_type(
+	    r#"| [| Int | [Int] | Str] | Bool"#,
+	    ast.union(&[
+		ast.t_list(ast.union(&[
+		    ast.t_int.clone(),
+		    ast.union(&[
+			ast.t_list(ast.t_int.clone()),
+			ast.t_str.clone()
+		    ])])
+		),
+		ast.t_bool.clone()
+	    ])
+	);
+
+	assert_type(
+	    r#"| Int | [Int] | Str | Bool"#,
+	    ast.union(&[
+		ast.t_int.clone(),
+		ast.union(&[
+		    ast.t_list(ast.t_int.clone()),
+		    ast.union(&[
+			ast.t_str.clone(),
+			ast.t_bool.clone()
+		    ])
+		])
+	    ])
+	);
+    }
+
     // Test parsing of Statements.
 
     #[test]
