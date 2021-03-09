@@ -6,6 +6,15 @@ use std::ops::Deref;
 
 // Associative list macro for slices of named pairs with python-like
 // syntax.
+//
+// Basically converts this:
+//
+// alist!{"foo" => bar, "baz" => quux}
+//
+// To this:
+//
+// [("foo", bar), ("baz", bar)]
+//
 #[macro_export]
 macro_rules! alist(
     { $($key:expr => $value:expr),* } => {
@@ -16,6 +25,18 @@ macro_rules! alist(
 
 // Like the above, but implicitly uses String instead of &str, and
 // creates a collection instead of a slice.
+// Associative list macro for slices of named pairs with python-like
+// syntax.
+//
+// Basically converts this:
+//
+// map!{"foo" => bar, "baz" => quux}
+//
+// To this:
+//
+// [("foo".to_string(), bar), ("baz".to_string(), bar)]
+//
+// *and* places the result is placed into a collection.
 #[macro_export]
 macro_rules! map(
     { $($key:expr => $value:expr),* } => {
@@ -154,6 +175,15 @@ pub enum Expr {
 //
 // Basically, wouldn't be needed but for the distinction between []
 // and Vec, &str and string.
+//
+// Converts this:
+//
+// &[("foo", bar), ("baz", quux)]
+//
+// Into this:
+//
+// vec![("foo".to_string(), bar.clone()), ("baz".to_tring(), quux.clone())]
+//
 pub fn alist<T: Clone>(items: &[(&str, T)]) -> Vec<(String, T)> {
     items
 	.iter()
