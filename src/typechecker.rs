@@ -5,17 +5,17 @@ use std::ops::Deref;
 
 #[derive(Clone, Debug, PartialEq)]
 pub enum TypeError {
-    Mismatch(Node<TypeTag>, Node<TypeTag>),
-    NotAList(Node<TypeTag>),
-    NotAMap(Node<TypeTag>),
-    NotARecord(Node<TypeTag>),
+    Mismatch(TypeNode, TypeNode),
+    NotAList(TypeNode),
+    NotAMap(TypeNode),
+    NotARecord(TypeNode),
     Undefined(String),
-    ListIndexMustBeInt(Node<TypeTag>),
+    ListIndexMustBeInt(TypeNode),
     KeyError(Map<TypeTag>, String),
     FieldError(AList<Member>, String),
     NotOneOf(Seq<TypeTag>),
-    NotIterable(Node<TypeTag>),
-    NotCallable(Node<TypeTag>),
+    NotIterable(TypeNode),
+    NotCallable(TypeNode),
     ArgError(Seq<TypeTag>, Seq<TypeTag>),
     NotImplemented
 }
@@ -24,7 +24,7 @@ pub enum TypeError {
 use TypeError::*;
 
 
-pub type TypeExpr = core::result::Result<Node<TypeTag>, TypeError>;
+pub type TypeExpr = core::result::Result<TypeNode, TypeError>;
 pub type TypeCheck = core::result::Result<(), TypeError>;
 
 
@@ -47,7 +47,7 @@ impl TypeChecker {
     // If the sequence contains exactly one type, returns that type.
     // If the sequence contains multiple types, returns a Union with de-duped     //
     // XXX: see github issue #9
-    pub fn narrow(mut types: Seq<TypeTag>) -> Node<TypeTag> {
+    pub fn narrow(mut types: Seq<TypeTag>) -> TypeNode {
         types.dedup();
         match types.len() {
             0 => Node::new(TypeTag::Void),
@@ -133,7 +133,7 @@ impl TypeChecker {
         }
     }
 
-    pub fn eval_dot(&self, obj: &Node<Expr>, field: &String) -> TypeExpr {
+    pub fn eval_dot(&self, obj: &ExprNode, field: &String) -> TypeExpr {
         let obj = self.eval_expr(obj)?;
         match obj.deref() {
 	    TypeTag::Map(t) => Ok(t.clone()),
@@ -146,7 +146,7 @@ impl TypeChecker {
     pub fn eval_block(
         &self,
         stmts: &Seq<Statement>,
-        ret: &Node<Expr>
+        ret: &ExprNode
     ) -> TypeExpr {
         let env = Env::chain(&self.types);
         let sub = TypeChecker::new(env);
@@ -156,7 +156,7 @@ impl TypeChecker {
         sub.eval_expr(ret)
     }
 
-    pub fn eval_index(&self, lst: &Node<Expr>, index: &Node<Expr>) -> TypeExpr {
+    pub fn eval_index(&self, lst: &ExprNode, index: &ExprNode) -> TypeExpr {
         let lst = self.eval_expr(lst)?;
         let index = self.eval_expr(index)?;
 
@@ -173,7 +173,7 @@ impl TypeChecker {
     pub fn eval_cond(
         &self,
         cases: &PairSeq<Expr>,
-        default: &Node<Expr>
+        default: &ExprNode
     ) -> TypeExpr {
         let conds: Result<Seq<TypeTag>, TypeError> = cases
             .iter()
@@ -204,8 +204,8 @@ impl TypeChecker {
     pub fn eval_binop(
         &self,
         op: BinOp,
-        l: &Node<Expr>,
-        r: &Node<Expr>
+        l: &ExprNode,
+        r: &ExprNode
     ) -> TypeExpr {
         use TypeTag as TT;
         let l = self.eval_expr(l)?;
@@ -220,7 +220,7 @@ impl TypeChecker {
         }
     }
 
-    pub fn eval_unop(&self, op: UnOp, operand: &Node<Expr>) -> TypeExpr {
+    pub fn eval_unop(&self, op: UnOp, operand: &ExprNode) -> TypeExpr {
         use TypeTag as TT;
         let type_ = self.eval_expr(operand)?;
         let numeric = Node::new(TT::Union(vec! {
@@ -239,7 +239,7 @@ impl TypeChecker {
         }
     }
 
-    fn eval_call(&self, func: &Node<Expr>, args: &Seq<Expr>) -> TypeExpr {
+    fn eval_call(&self, func: &ExprNode, args: &Seq<Expr>) -> TypeExpr {
         let func = self.eval_expr(func)?;
         let args: Result<Seq<TypeTag>, TypeError> = args
             .iter()
@@ -261,8 +261,8 @@ impl TypeChecker {
     pub fn eval_lambda(
         &self,
         args: &AList<TypeTag>,
-        ret: &Node<TypeTag>,
-        body: &Node<Expr>
+        ret: &TypeNode,
+        body: &ExprNode
     ) -> TypeExpr {
         let env = Env::chain(&self.types);
         env.import(args);
@@ -279,7 +279,7 @@ impl TypeChecker {
     }
 
     // Check whether expr is a list, and return the item type.
-    pub fn is_list(&self, expr: &Node<Expr>) -> TypeExpr {
+    pub fn is_list(&self, expr: &ExprNode) -> TypeExpr {
         let result = self.eval_expr(expr)?;
         match result.deref() {
             TypeTag::List(item_type) => Ok(item_type.clone()),
@@ -288,7 +288,7 @@ impl TypeChecker {
     }
 
     // Check whether expr is convertible to a map, and return the item type.
-    pub fn is_map(&self, expr: &Node<Expr>) -> TypeExpr {
+    pub fn is_map(&self, expr: &ExprNode) -> TypeExpr {
         let result = self.eval_expr(expr)?;
         match result.deref() {
             TypeTag::Map(item_type) => Ok(item_type.clone()),
@@ -300,7 +300,7 @@ impl TypeChecker {
     }
 
     // Check whether expr is a bool.
-    pub fn is_bool(&self, expr: &Node<Expr>) -> TypeCheck {
+    pub fn is_bool(&self, expr: &ExprNode) -> TypeCheck {
         let result = self.eval_expr(expr)?;
         match result.deref() {
             TypeTag::Bool => Ok(()),
@@ -309,7 +309,7 @@ impl TypeChecker {
     }
 
     // Check whether expr is void.
-    pub fn is_void(&self, expr: &Node<Expr>) -> TypeCheck {
+    pub fn is_void(&self, expr: &ExprNode) -> TypeCheck {
         let result = self.eval_expr(expr)?;
         match result.deref() {
             TypeTag::Void => Ok(()),
@@ -320,7 +320,7 @@ impl TypeChecker {
     // Type-checking works at the statement level.
     pub fn check_statement(
         &self,
-        stmt: &Node<Statement>
+        stmt: &StmtNode
     ) -> TypeCheck {
 	// We check each statement by computing its type. If this
 	// succeeds, depedning on the type of statement, we check it

@@ -4,7 +4,7 @@
 // https://github.com/vpzomtrrfrt/amath/blob/master/src/grammar.lalrpop
 
 use crate::ast;
-use crate::ast::Node;
+use crate::ast::{Node, ExprNode, TypeNode, StmtNode};
 use crate::ast::Builder;
 use std::str::FromStr;
 
@@ -18,7 +18,7 @@ pub Program: ast::Seq<ast::Statement>
 
 
 // Statement entry point.
-pub Statement: Node<ast::Statement> = {
+pub Statement: StmtNode = {
     FuncDef,
     ProcDef,
     TypeDef,
@@ -30,18 +30,18 @@ pub Statement: Node<ast::Statement> = {
 
 
 // Expression entry point.
-pub Expr: Node<ast::Expr> = {
+pub Expr: ExprNode = {
     Block,
     SimpleExpr
 }
 
 
 // Type Entry Point
-pub Type: Node<ast::TypeTag> = TypeExpr;
+pub Type: TypeNode = TypeExpr;
 
 
 // Syntactic sugar for Union(a, b)
-pub TypeExpr: Node<ast::TypeTag> = {
+pub TypeExpr: TypeNode = {
     <a:TypeExpr> "|" <b:TypeCons> => ast.union(&[a, b]),
     // If we had a Sum type, it would go here, and would look like this.
     // <a:TypeExpr> "+" <b:TypeCons> => ast.sum(&[a, b]),
@@ -51,7 +51,7 @@ pub TypeExpr: Node<ast::TypeTag> = {
 
 
 // Application of a type-level function: a type constructor.
-pub TypeCons: Node<ast::TypeTag> = {
+pub TypeCons: TypeNode = {
     <cons:TypeCons> "<" <types:Comma<Type>> ">"
 	=> Node::new(ast::TypeTag::TypeCons(cons, types.to_vec())),
     TypeTerm
@@ -59,7 +59,7 @@ pub TypeCons: Node<ast::TypeTag> = {
 
 
 // A primitive type, or a grouping of subtypes.
-pub TypeTerm: Node<ast::TypeTag> = {
+pub TypeTerm: TypeNode = {
     "Void"                      => ast.t_void.clone(),
     "Bool"                      => ast.t_bool.clone(),
     "Int"                       => ast.t_int.clone(),
@@ -76,7 +76,7 @@ pub TypeTerm: Node<ast::TypeTag> = {
 
 
 // Record types
-pub Record: Node<ast::TypeTag>
+pub Record: TypeNode
     = "{" <members:Semicolon<Member>> "}"
     => ast.record(&members);
 
@@ -95,13 +95,13 @@ pub Member: (&'input str, ast::Member) = {
 
 
 // Syntactic sugar for defining a function returning a value.
-FuncDef: Node<ast::Statement>
+FuncDef: StmtNode
     = "func" <name:Id> <args:Arglist> "->" <ret:Type> <body:Block>
     => ast.def(name, ast.lambda(&args, ret, body));
 
 
 // Syntatic sugar for defining a function which returns no value.
-ProcDef: Node<ast::Statement>
+ProcDef: StmtNode
     = "proc" <name:Id> <args:Arglist> <body:Block>
     => ast.def(name, ast.lambda(&args, ast.t_void.clone(), body));
 
@@ -115,25 +115,25 @@ ProcDef: Node<ast::Statement>
 // Templates can be called with the TemplateCall syntax, which
 // consumes a trailing block. This allows defining library functions
 // which feel like control structures.
-TemplateDef: Node<ast::Statement>
+TemplateDef: StmtNode
     = "template" <name:Id> <args:Arglist> "using" <delegate:Id> <body:Block>
     => ast.def(name, ast.template(&args, delegate, body));
 
 
 // The only way to introduce a type binding
-TypeDef: Node<ast::Statement>
+TypeDef: StmtNode
     = "type" <name:TypeName> ":" <t:Type> ";"
     => ast.typedef(name, t);
 
 
 // Used for raw cairo operations.
-Effect: Node<ast::Statement>
+Effect: StmtNode
     = "out" <name:Id> <exprs:ExprList> ";"
     => ast.emit(name, &exprs);
 
 
 // Bind a name to a value.
-Let: Node<ast::Statement>
+Let: StmtNode
     = "let" <name:Id> "=" <value:Expr> ";"
     => ast.def(name, value);
 
@@ -141,14 +141,14 @@ Let: Node<ast::Statement>
 // An expression evaluated for its side effects in a statement context.
 //
 // To keep the LALRPOP happy, this is a subset of expressions.
-EffectExpr: Node<ast::Statement> = {
+EffectExpr: StmtNode = {
     <Cond> => ast.expr_for_effect(<>),
     TemplateCall,
 }
 
 
 // Iterate over a collection.
-Iteration: Node<ast::Statement> = {
+Iteration: StmtNode = {
     "for" <name:Id> "in" <list:Expr> <body:Block>
 	=> ast.list_iter(name, list, ast.expr_for_effect(body)),
     "for" "(" <key:Id> "," <value:Id> ")" "in" <map:Expr> <body:Block>
@@ -159,7 +159,7 @@ Iteration: Node<ast::Statement> = {
 // Any expression which is not a Block.
 //
 // Needed to avoid the abiguity of nesting blocks.
-SimpleExpr: Node<ast::Expr> = {
+SimpleExpr: ExprNode = {
     Lambda,
     Cond,
     Logic,
@@ -167,7 +167,7 @@ SimpleExpr: Node<ast::Expr> = {
 
 
 // An if-else chain
-Cond: Node<ast::Expr>
+Cond: ExprNode
     = "if"
       <first:CondClause>
       <rest:("elif" <CondClause>)*>
@@ -181,25 +181,25 @@ Cond: Node<ast::Expr>
 
 
 // Single clause in an if-else chain
-CondClause: (Node<ast::Expr>, Node<ast::Expr>)
+CondClause: (ExprNode, ExprNode)
     = "(" <pred: Expr> ")" <body: Block>
     => (pred, body);
 
 
 // Single paramater in a function signature
-Param: (&'input str, Node<ast::TypeTag>)
+Param: (&'input str, TypeNode)
     = <name:Id> ":" <t:Type>
     => (name, t);
 
 
 // The argument list of a function signature
-Arglist: Vec<(&'input str, Node<ast::TypeTag>)>
+Arglist: Vec<(&'input str, TypeNode)>
     = "(" <args:Comma<Param>> ")"
     => args;
 
 
 // An anonymous function expression.
-Lambda: Node<ast::Expr>
+Lambda: ExprNode
     = <args:Arglist> <ret:("->" <Type>)?> "=" <body:Expr>
     => ast.lambda(
 	&args,
@@ -211,7 +211,7 @@ Lambda: Node<ast::Expr>
 // A sequence of statements treated as an expression.
 //
 // If the `yield` keyword is present, then this block has a value.
-Block: Node<ast::Expr> = {
+Block: ExprNode = {
     "{" <stmts:Statement+> <ret:("yield" <SimpleExpr>)?> "}"
         => ast.block(&stmts, ret.unwrap_or(ast.void.clone())),
     "{" <ret:("yield" <SimpleExpr>)> "}"
@@ -221,7 +221,7 @@ Block: Node<ast::Expr> = {
 
 // Expression entry point anow, this is the logic operators. This way
 // sloppily-parenthesized logic hould do the least surprising thing.
-Logic: Node<ast::Expr> = {
+Logic: ExprNode = {
     <a:Logic> "and" <b:Rel> => ast.bin(ast::BinOp::And, a, b),
     <a:Logic> "or"  <b:Rel> => ast.bin(ast::BinOp::Or, a, b),
     <a:Logic> "xor" <b:Rel> => ast.bin(ast::BinOp::Xor, a, b),
@@ -230,7 +230,7 @@ Logic: Node<ast::Expr> = {
 
 
 // Relational operators are the next highest precedence.
-Rel: Node<ast::Expr> = {
+Rel: ExprNode = {
     <a:Rel> "<"  <b:Sum> => ast.bin(ast::BinOp::Lt, a, b),
     <a:Rel> ">"  <b:Sum> => ast.bin(ast::BinOp::Gt, a, b),
     <a:Rel> "<=" <b:Sum> => ast.bin(ast::BinOp::Lte, a, b),
@@ -240,21 +240,21 @@ Rel: Node<ast::Expr> = {
 };
 
 
-Sum: Node<ast::Expr> = {
+Sum: ExprNode = {
     <a:Sum> "+" <b:Factor> => ast.bin(ast::BinOp::Add, a, b),
     <a:Sum> "-" <b:Factor> => ast.bin(ast::BinOp::Sub, a, b),
     Factor,
 };
 
 
-Factor: Node<ast::Expr> = {
+Factor: ExprNode = {
     <a:Factor> "*" <b:Exp> => ast.bin(ast::BinOp::Mul, a, b),
     <a:Factor> "/" <b:Exp> => ast.bin(ast::BinOp::Div, a, b),
     Exp
 };
 
 
-Exp: Node<ast::Expr> = {
+Exp: ExprNode = {
     <base:Exp> "^" <exp: InvTerm> => ast.bin(ast::BinOp::Pow, base, exp),
     InvTerm
 }
@@ -264,7 +264,7 @@ Exp: Node<ast::Expr> = {
 // right thing. I.e. -foo() should parse as (- (foo)), not ((- foo)).
 //
 // The same thing applies to logical negation.
-InvTerm: Node<ast::Expr> = {
+InvTerm: ExprNode = {
     "-" <a:InvTerm> => ast.un(ast::UnOp::Neg, a),
     "not" <a:InvTerm> => ast.un(ast::UnOp::Not, a),
     Call
@@ -278,7 +278,7 @@ InvTerm: Node<ast::Expr> = {
 //
 // To simplify the grammar, templates are assumed not to return a
 // value and are purely used for their effects.
-TemplateCall: Node<ast::Statement> = {
+TemplateCall: StmtNode = {
     <func:Selection> "(" <args:ExprList> ")" <delegate:Block>
 	=> ast.template_call(func, &args, delegate),
     <func:Selection> "(" <args:ExprList> ")" ";"
@@ -288,14 +288,14 @@ TemplateCall: Node<ast::Statement> = {
 
 // We want indexing and selection to bind before function calls, so that
 // foo.bar(a) parses as ((dot foo bar) a), not (dot foo (bar a))
-Call: Node<ast::Expr> = {
+Call: ExprNode = {
     <func:Call> "(" <args:ExprList> ")" => ast.call(func, &args),
     Selection
 }
 
 
 // XXX: see github issue #13
-Selection: Node<ast::Expr> = {
+Selection: ExprNode = {
     <obj:Selection> "." <id:Id> => ast.dot(obj, id),
     <obj:Selection> "[" <e:Expr> "]" => ast.index(obj, e),
     Term
@@ -303,7 +303,7 @@ Selection: Node<ast::Expr> = {
 
 
 // Literals of any type except lambdas.
-Term: Node<ast::Expr> = {
+Term: ExprNode = {
     "self" => ast.this.clone(),
     Id => ast.id(<>),
     Int => ast.i(<>),
@@ -317,7 +317,7 @@ Term: Node<ast::Expr> = {
 
 
 // A single item in a map.
-MapItem: (&'input str, Node<ast::Expr>) = {
+MapItem: (&'input str, ExprNode) = {
     <k:Str> ":" <v:Logic> => (k, v),
     <k:Id> ":" <v:Logic> => (k, v)
 }

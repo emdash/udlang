@@ -30,7 +30,7 @@ mod tests {
     
     // Helper functions for test cases.
 
-    fn assert_expr(text: &'static str, ast: ast::SubExpr) {
+    fn assert_expr(text: &'static str, ast: ast::ExprNode) {
 	let builder = ast::Builder::new();
         assert_eq!(
             grammar::ExprParser::new().parse(&builder, text).unwrap(),
@@ -38,7 +38,7 @@ mod tests {
         );
     }
 
-    fn assert_statement(text: &'static str, ast: Node<Statement>) {
+    fn assert_statement(text: &'static str, ast: StmtNode) {
 	let builder = ast::Builder::new();
         assert_eq!(
             grammar::StatementParser::new().parse(&builder, text).unwrap(),
@@ -46,7 +46,7 @@ mod tests {
         );
     }
 
-    fn assert_type(text: &'static str, ast: ast::Node<TypeTag>) {
+    fn assert_type(text: &'static str, ast: ast::TypeNode) {
 	let builder = ast::Builder::new();
         assert_eq!(
 	    grammar::TypeParser::new().parse(&builder, text).unwrap(),

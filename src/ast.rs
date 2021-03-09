@@ -47,18 +47,36 @@ macro_rules! map(
     }
 );
 
-
-// Abstract over various memory management strategies.
+// Convenience Type Aliases
 //
-// Simplest solution to issue #7: we define a Node type and related
-// containers. This allows us to change strategies, though a lot of
-// code will probably break if the API doesn't look like `std::Box` or
-// `sd::Rc`.
+// It's actually a bit tedious to work directly with the
+// enumerations. Calls to `Node::new()`, `.to_string()`, and `clone()`
+// proliferate everywhere, the enum variants can't live in the
+// top-level namespace, and etc.
+//
+// To abstract over various memory management strategies, and to help
+// cut down on syntactic noise and keep the code-base tight, I added
+// these type aliases.
+//
+// Simplest solution to issue #7: we define a Node type, derive a
+// bunch of related containers from it. This allows us to change
+// strategies, though a lot of code will break if Node doesn't look
+// sufficiently like `std::Box` or `sd::Rc`.
+//
+// I think perhaps factoring this into a trait will make it easier to
+// implement bookeeping of source location info (for error reporting).
+//
+// Don't use the enumerations directly to build an AST. Use the
+// Builder API in this file to build an AST. When writing a visitor,
+// it is okay to use the raw enums in match patterns.
 pub type Node<T> = Rc<T>;
 pub type Seq<T> = Vec<Node<T>>;
 pub type PairSeq<T> = Vec<(Node<T>, Node<T>)>;
 pub type AList<T> = Vec<(String, Node<T>)>;
 pub type Map<T> = HashMap<String, Node<T>>;
+pub type ExprNode = Node<Expr>;
+pub type TypeNode = Node<TypeTag>;
+pub type StmtNode = Node<Statement>;
 
 
 // Arithmetic and logic operations
@@ -113,13 +131,13 @@ pub enum TypeTag {
     // A bound type name.
     TypeName(String),
     // A type which may be None.
-    Option(Node<TypeTag>),
+    Option(TypeNode),
     // Fixed-sized list of heterogenous types.
     Tuple(Seq<TypeTag>),
     // Variable-length list of single type.
-    List(Node<TypeTag>),
+    List(TypeNode),
     // Maps string keys to values of a single type.
-    Map(Node<TypeTag>),
+    Map(TypeNode),
     // Internal type for holding a map literal, which converts to map
     // or record, depending on context.
     MapExpr(Map<TypeTag>),
@@ -127,23 +145,23 @@ pub enum TypeTag {
     // method syntax.
     Record(AList<Member>),
     // Anonymous function expressoin.
-    Lambda(Seq<TypeTag>, Node<TypeTag>),
+    Lambda(Seq<TypeTag>, TypeNode),
     // A union of one or more types.
     Union(Seq<TypeTag>),
     // Application of a type constructor.
-    TypeCons(Node<TypeTag>, Seq<TypeTag>),
+    TypeCons(TypeNode, Seq<TypeTag>),
     // Definition of a type constructor.
-    TypeFunc(Seq<String>, Node<TypeTag>)
+    TypeFunc(Seq<String>, TypeNode)
 }
 
 
 // ADT For record fields
 #[derive(Clone, Debug, PartialEq)]
 pub enum Member {
-    Field(Node<TypeTag>),
-    Method(AList<TypeTag>, Node<TypeTag>, Node<Expr>),
-    StaticValue(Node<TypeTag>, Node<Expr>),
-    StaticMethod(AList<TypeTag>, Node<TypeTag>, Node<Expr>)
+    Field(TypeNode),
+    Method(AList<TypeTag>, TypeNode, ExprNode),
+    StaticValue(TypeNode, ExprNode),
+    StaticMethod(AList<TypeTag>, TypeNode, ExprNode)
 }
 
 
@@ -160,14 +178,14 @@ pub enum Expr {
     List(Seq<Expr>),
     Map(Map<Expr>),
     Id(String),
-    Dot(Node<Expr>, String),
-    Index(Node<Expr>, Node<Expr>),
-    Cond(PairSeq<Expr>, Node<Expr>),
-    Block(Seq<Statement>, Node<Expr>),
-    BinOp(BinOp, Node<Expr>, Node<Expr>),
-    UnOp(UnOp, Node<Expr>),
-    Call(Node<Expr>, Seq<Expr>),
-    Lambda(AList<TypeTag>, Node<TypeTag>, Node<Expr>)
+    Dot(ExprNode, String),
+    Index(ExprNode, ExprNode),
+    Cond(PairSeq<Expr>, ExprNode),
+    Block(Seq<Statement>, ExprNode),
+    BinOp(BinOp, ExprNode, ExprNode),
+    UnOp(UnOp, ExprNode),
+    Call(ExprNode, Seq<Expr>),
+    Lambda(AList<TypeTag>, TypeNode, ExprNode)
 }
 
 
@@ -195,20 +213,14 @@ pub fn alist<T: Clone>(items: &[(&str, T)]) -> Vec<(String, T)> {
 // ADT for effects and structure
 #[derive(Clone, Debug, PartialEq)]
 pub enum Statement {
-    ExprForEffect(Node<Expr>),
+    ExprForEffect(ExprNode),
     Emit(String, Seq<Expr>),
-    Def(String, Node<Expr>),
-    TypeDef(String, Node<TypeTag>),
-    ListIter(String, Node<Expr>, Node<Statement>),
-    MapIter(String, String, Node<Expr>, Node<Statement>),
-    While(Node<Expr>, Node<Statement>),
+    Def(String, ExprNode),
+    TypeDef(String, TypeNode),
+    ListIter(String, ExprNode, StmtNode),
+    MapIter(String, String, ExprNode, StmtNode),
+    While(ExprNode, StmtNode),
 }
-
-
-// XXX: Should there be a a wrapped type equivalent for the underlying
-// enums? Or is it better not to hide the Node<> wrapping?
-pub type SubExpr = Node<Expr>;
-type TypeExpr = Node<TypeTag>;
 
 
 // ADT for programs
@@ -226,17 +238,17 @@ pub struct Program {
 // Concretely, this struct is used for ast node re-use.
 pub struct Builder {
     // Singleton values that can be used directly
-    pub void:  SubExpr,
-    pub this:  SubExpr,
-    pub t_void:  TypeExpr,
-    pub t_none:  TypeExpr,
-    pub t_bool:  TypeExpr,
-    pub t_int:   TypeExpr,
-    pub t_float: TypeExpr,
-    pub t_point: TypeExpr,
-    pub t_str:   TypeExpr,
-    pub t_any:   TypeExpr,
-    pub t_this:  TypeExpr,
+    pub void:  ExprNode,
+    pub this:  ExprNode,
+    pub t_void:  TypeNode,
+    pub t_none:  TypeNode,
+    pub t_bool:  TypeNode,
+    pub t_int:   TypeNode,
+    pub t_float: TypeNode,
+    pub t_point: TypeNode,
+    pub t_str:   TypeNode,
+    pub t_any:   TypeNode,
+    pub t_this:  TypeNode,
 }
 
 
@@ -274,21 +286,21 @@ impl Builder {
     // because Expr isn't hashable.
     //
     // XXX: Fix this when issue #5 is fixed.
-    fn subexpr(&self, expr: Expr) -> SubExpr {
+    fn subexpr(&self, expr: Expr) -> ExprNode {
 	Node::new(expr)
     }
 
     // Like above, but for types
     //
     // XXX: same fixme.
-    fn type_(&self, t: TypeTag) -> Node<TypeTag> {
+    fn type_(&self, t: TypeTag) -> TypeNode {
 	Node::new(t)
     }
 
     // Like above but for statements
     //
     // XXX: same fixme
-    pub fn statement(&self, s: Statement) -> Node<Statement> {
+    pub fn statement(&self, s: Statement) -> StmtNode {
 	Node::new(s)
     }
 
@@ -300,31 +312,31 @@ impl Builder {
     //
     // *** There should be no usage of Node::new() below this line! ***
 
-    pub fn b(&self, value: bool) -> SubExpr {
+    pub fn b(&self, value: bool) -> ExprNode {
 	self.subexpr(Expr::Bool(value))
     }
 
-    pub fn i(&self, value: i64) -> SubExpr {
+    pub fn i(&self, value: i64) -> ExprNode {
 	self.subexpr(Expr::Int(value))
     }
 
-    pub fn f(&self, value: f64) -> SubExpr {
+    pub fn f(&self, value: f64) -> ExprNode {
 	self.subexpr(Expr::Float(value))
     }
 
-    pub fn s(&self, value: &str) -> SubExpr {
+    pub fn s(&self, value: &str) -> ExprNode {
 	self.subexpr(Expr::Str(String::from(value)))
     }
 
-    pub fn point(&self, x: f64, y: f64) -> SubExpr {
+    pub fn point(&self, x: f64, y: f64) -> ExprNode {
 	self.subexpr(Expr::Point(x, y))
     }
 
-    pub fn list(&self, value: &[SubExpr]) -> SubExpr {
+    pub fn list(&self, value: &[ExprNode]) -> ExprNode {
 	self.subexpr(Expr::List(value.iter().cloned().collect()))
     }
 
-    pub fn map(&self, value: &[(&str, SubExpr)]) -> SubExpr {
+    pub fn map(&self, value: &[(&str, ExprNode)]) -> ExprNode {
 	let value = value
 	    .iter()
 	    .map(|v| (String::from(v.0), v.1.clone()))
@@ -333,55 +345,55 @@ impl Builder {
 	self.subexpr(Expr::Map(value))
     }
 
-    pub fn id(&self, value: &str) -> SubExpr {
+    pub fn id(&self, value: &str) -> ExprNode {
 	self.subexpr(Expr::Id(value.to_string()))
     }
 
-    pub fn dot(&self, lhs: SubExpr, field: &str) -> SubExpr {
+    pub fn dot(&self, lhs: ExprNode, field: &str) -> ExprNode {
 	self.subexpr(Expr::Dot(lhs.clone(), field.to_string()))
     }
 
-    pub fn index(&self, lhs: SubExpr, rhs: SubExpr) -> SubExpr {
+    pub fn index(&self, lhs: ExprNode, rhs: ExprNode) -> ExprNode {
 	self.subexpr(Expr::Index(lhs.clone(), rhs))
     }
 
     pub fn cond(
 	&self,
-	conds: &[(SubExpr, SubExpr)],
-	// XXX: Maybe use Option<SubExpr> here
-	else_: SubExpr
-    ) -> SubExpr {
+	conds: &[(ExprNode, ExprNode)],
+	// XXX: Maybe use Option<ExprNode> here
+	else_: ExprNode
+    ) -> ExprNode {
 	let conds = conds.iter().cloned().collect();
 	self.subexpr(Expr::Cond(conds, else_))
     }
 
     pub fn block(
 	&self,
-	statements: &[Node<Statement>],
-	retval: SubExpr
-    ) -> SubExpr {
+	statements: &[StmtNode],
+	retval: ExprNode
+    ) -> ExprNode {
 	let statements = statements.iter().cloned().collect();
 	self.subexpr(Expr::Block(statements, retval))
     }
 
-    pub fn bin(&self, op: BinOp, lhs: SubExpr, rhs: SubExpr) -> SubExpr {
+    pub fn bin(&self, op: BinOp, lhs: ExprNode, rhs: ExprNode) -> ExprNode {
 	self.subexpr(Expr::BinOp(op, lhs, rhs))
     }
 
-    pub fn un(&self, op: UnOp, operand: SubExpr) -> SubExpr {
+    pub fn un(&self, op: UnOp, operand: ExprNode) -> ExprNode {
 	self.subexpr(Expr::UnOp(op, operand))
     }
 
-    pub fn call(&self, callee: SubExpr, args: &[SubExpr]) -> SubExpr {
+    pub fn call(&self, callee: ExprNode, args: &[ExprNode]) -> ExprNode {
 	self.subexpr(Expr::Call(callee, args.iter().cloned().collect()))
     }
     
     pub fn template_call(
 	&self,
-	func: SubExpr,
-	args: &[SubExpr],
-	delegate: SubExpr
-    ) -> Node<Statement> {
+	func: ExprNode,
+	args: &[ExprNode],
+	delegate: ExprNode
+    ) -> StmtNode {
 	let mut args = args.to_vec();
 	// Construct a closure using block and append to arglist.
 	args.push(self.lambda(&[], self.t_void.clone(), delegate));
@@ -390,10 +402,10 @@ impl Builder {
 
     pub fn template(
 	&self,
-	args: &[(&str, Node<TypeTag>)],
+	args: &[(&str, TypeNode)],
 	delegate: &str,
-	body: SubExpr
-    ) -> SubExpr {
+	body: ExprNode
+    ) -> ExprNode {
 	let mut args = args.to_vec();
 	// Append the delegate closure argument to args.
 	args.push((delegate, self.t_lambda(&[], self.t_void.clone())));
@@ -402,10 +414,10 @@ impl Builder {
 
     pub fn lambda(
 	&self,
-	args: &[(&str, Node<TypeTag>)],
-	ret: Node<TypeTag>,
-	body: SubExpr
-    ) -> SubExpr {
+	args: &[(&str, TypeNode)],
+	ret: TypeNode,
+	body: ExprNode
+    ) -> ExprNode {
 	let args = args
 	    .iter()
 	    .map(|arg| {
@@ -418,27 +430,27 @@ impl Builder {
 
     // Every variant in TypeTag gets a method here
 
-    pub fn type_name(&self, name: &str) -> TypeExpr {
+    pub fn type_name(&self, name: &str) -> TypeNode {
 	self.type_(TypeTag::TypeName(name.to_string()))
     }
 
-    pub fn option(&self, t: TypeExpr) -> TypeExpr {
+    pub fn option(&self, t: TypeNode) -> TypeNode {
 	self.type_(TypeTag::Option(t))
     }
 
-    pub fn tuple(&self, tys: &[TypeExpr]) -> TypeExpr {
+    pub fn tuple(&self, tys: &[TypeNode]) -> TypeNode {
 	self.type_(TypeTag::Tuple(tys.iter().cloned().collect()))
     }
 
-    pub fn t_list(&self, t: TypeExpr) -> TypeExpr {
+    pub fn t_list(&self, t: TypeNode) -> TypeNode {
 	self.type_(TypeTag::List(t))
     }
 
-    pub fn t_map(&self, value_type: TypeExpr) -> TypeExpr {
+    pub fn t_map(&self, value_type: TypeNode) -> TypeNode {
 	self.type_(TypeTag::Map(value_type))
     }
 
-    pub fn map_expr(&self, fields: &[(&str, TypeExpr)]) -> TypeExpr {
+    pub fn map_expr(&self, fields: &[(&str, TypeNode)]) -> TypeNode {
 	let fields = fields
 	    .iter()
 	    .map(|field| (field.0.to_string(), field.1.clone()))
@@ -446,7 +458,7 @@ impl Builder {
 	self.type_(TypeTag::MapExpr(fields))
     }
 
-    pub fn record(&self, members: &[(&str, Member)]) -> TypeExpr {
+    pub fn record(&self, members: &[(&str, Member)]) -> TypeNode {
 	let members = members
 	    .iter()
 	    // XXX: This useage of Node::new is acceptable for now.
@@ -455,16 +467,16 @@ impl Builder {
 	self.type_(TypeTag::Record(members))
     }
 
-    pub fn field<'a>(&self, name: &'a str, t: TypeExpr) -> (&'a str, Member) {
+    pub fn field<'a>(&self, name: &'a str, t: TypeNode) -> (&'a str, Member) {
 	(name, Member::Field(t))
     }
 
     pub fn method<'a, 'b>(
 	&self,
 	name: &'a str,
-	args: &'b [(&'b str, TypeExpr)],
-	ret: TypeExpr,
-	body: SubExpr
+	args: &'b [(&'b str, TypeNode)],
+	ret: TypeNode,
+	body: ExprNode
     ) -> (&'a str, Member) {
 	(name, Member::Method(alist(args), ret, body))
     }
@@ -472,8 +484,8 @@ impl Builder {
     pub fn static_val<'a>(
 	&self,
 	name: &'a str,
-	t: TypeExpr,
-	v: SubExpr
+	t: TypeNode,
+	v: ExprNode
     ) -> (&'a str, Member) {
 	(name, Member::StaticValue(t, v))
     }
@@ -481,18 +493,18 @@ impl Builder {
     pub fn static_method<'a, 'b>(
 	&self,
 	name: &'a str,
-	args: &'b [(&'b str, TypeExpr)],
-	ret: TypeExpr,
-	body: SubExpr
+	args: &'b [(&'b str, TypeNode)],
+	ret: TypeNode,
+	body: ExprNode
     ) -> (&'a str, Member) {
 	(name, Member::StaticMethod(alist(args), ret, body))
     }
 
-    pub fn t_lambda(&self, fields: &[TypeExpr], ret: TypeExpr) -> TypeExpr {
+    pub fn t_lambda(&self, fields: &[TypeNode], ret: TypeNode) -> TypeNode {
 	self.type_(TypeTag::Lambda(fields.iter().cloned().collect(), ret))
     }
 
-    pub fn union(&self, ts: &[TypeExpr]) -> TypeExpr {
+    pub fn union(&self, ts: &[TypeNode]) -> TypeNode {
 	self.type_(TypeTag::Union(ts.iter().cloned().collect()))
     }
 
@@ -501,7 +513,7 @@ impl Builder {
 
     // ** Statements here ***
 
-    pub fn expr_for_effect(&self, expr: SubExpr) -> Node<Statement> {
+    pub fn expr_for_effect(&self, expr: ExprNode) -> StmtNode {
 	match expr.deref() {
             Expr::Block(stmts, node) => match node.deref() {
 		Expr::Void => if stmts.len() == 1 {
@@ -515,7 +527,7 @@ impl Builder {
 	}
     }
 
-    pub fn emit(&self, name: &str, exprs: &[SubExpr]) -> Node<Statement> {
+    pub fn emit(&self, name: &str, exprs: &[ExprNode]) -> StmtNode {
 	let exprs = exprs
 	    .iter()
 	    .cloned()
@@ -523,11 +535,11 @@ impl Builder {
 	Node::new(Statement::Emit(name.to_string(), exprs))
     }
 
-    pub fn def(&self, name: &str, expr: SubExpr) -> Node<Statement> {
+    pub fn def(&self, name: &str, expr: ExprNode) -> StmtNode {
 	Node::new(Statement::Def(name.to_string(), expr))
     }
 
-    pub fn typedef(&self, name: &str, t: TypeExpr) -> Node<Statement> {
+    pub fn typedef(&self, name: &str, t: TypeNode) -> StmtNode {
 	Node::new(Statement::TypeDef(name.to_string(), t))
     }
 
@@ -538,9 +550,9 @@ impl Builder {
     // grammar.lalrpop.
     pub fn guard(
 	&self,
-	clauses: &[(SubExpr, SubExpr)],
-	default: Option<Node<Statement>>
-    ) -> Node<Statement> {
+	clauses: &[(ExprNode, ExprNode)],
+	default: Option<StmtNode>
+    ) -> StmtNode {
 	let default = if let Some(default) = default {
             self.block(&[default], self.void.clone())
 	} else {
@@ -552,9 +564,9 @@ impl Builder {
 
     pub fn list_iter(
 	&self,
-	name: &str, list: SubExpr,
-	body: Node<Statement>
-    ) -> Node<Statement> {
+	name: &str, list: ExprNode,
+	body: StmtNode
+    ) -> StmtNode {
 	Node::new(
 	    Statement::ListIter(
 		name.to_string(),
@@ -568,9 +580,9 @@ impl Builder {
 	&self,
 	key: &str,
 	value: &str,
-	map: SubExpr,
-	body: Node<Statement>
-    ) -> Node<Statement> {
+	map: ExprNode,
+	body: StmtNode
+    ) -> StmtNode {
 	Node::new(Statement::MapIter(
             String::from(key),
             String::from(value),
