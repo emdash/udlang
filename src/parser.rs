@@ -251,6 +251,25 @@ mod tests {
     }
 
     #[test]
+    fn test_has() {
+	let ast = Builder::new();
+        assert_expr(
+            "foo.?.bar",
+            ast.has(ast.id("foo"), "bar")
+        );
+
+        assert_expr(
+            "foo.bar.?.baz",
+            ast.has(ast.dot(ast.id("foo"), "bar"), "baz")
+        );
+
+        assert_expr(
+            "foo.?.bar()",
+            ast.call(ast.has(ast.id("foo"), "bar"), &[])
+        );
+    }
+
+    #[test]
     fn test_index() {
 	let ast = Builder::new();
         assert_expr(

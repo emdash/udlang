@@ -227,6 +227,7 @@ pub enum Expr {
     Map(Map<Expr>),
     Id(String),
     Dot(ExprNode, String),
+    Has(ExprNode, String),
     Index(ExprNode, ExprNode),
     Cond(PairSeq<Expr>, ExprNode),
     Block(Seq<Statement>, ExprNode),
@@ -438,6 +439,10 @@ impl Builder {
 
     pub fn dot(&self, lhs: ExprNode, field: &str) -> ExprNode {
 	self.subexpr(Expr::Dot(lhs.clone(), field.to_string()))
+    }
+
+    pub fn has(&self, lhs: ExprNode, field: &str) -> ExprNode {
+	self.subexpr(Expr::Has(lhs.clone(), field.to_string()))
     }
 
     pub fn index(&self, lhs: ExprNode, rhs: ExprNode) -> ExprNode {

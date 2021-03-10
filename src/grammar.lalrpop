@@ -391,6 +391,7 @@ Call: ExprNode = {
 // XXX: see github issue #13
 Selection: ExprNode = {
     <obj:Selection> "." <id:Id> => ast.dot(obj, id),
+    <obj:Selection> ".?." <id:Id> => ast.has(obj, id),
     <obj:Selection> "[" <e:Expr> "]" => ast.index(obj, e),
     Term
 }

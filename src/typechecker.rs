@@ -96,6 +96,7 @@ impl TypeChecker {
             Expr::Map(items)         => self.eval_map(items),
             Expr::Id(name)           => self.eval_id(name),
             Expr::Dot(obj, key)      => self.eval_dot(obj, key),
+	    Expr::Has(_, _)          => Ok(Node::new(TypeTag::Bool)),
             Expr::Index(lst, i)      => self.eval_index(lst, i),
             Expr::Cond(cases, def)   => self.eval_cond(cases, def),
             Expr::Block(stmts, ret)  => self.eval_block(stmts, ret),
