@@ -223,6 +223,7 @@ pub enum Expr {
     Point(f64, f64),
     This, // the lowercase `self` keyword, but we can't call it that.
     In, // The `in` keyword.
+    Partial, // The `$` placeholder.
     List(Seq<Expr>),
     Map(Map<Expr>),
     Id(String),
@@ -312,9 +313,10 @@ pub enum Program {
 // structure of the ADT.
 pub struct Builder {
     // Singleton values that can be used directly
-    pub void:  ExprNode,
-    pub this:  ExprNode,
-    pub in_: ExprNode,
+    pub void:    ExprNode,
+    pub this:    ExprNode,
+    pub in_:     ExprNode,
+    pub partial: ExprNode,
     pub t_void:  TypeNode,
     pub t_none:  TypeNode,
     pub t_bool:  TypeNode,
@@ -352,6 +354,7 @@ impl Builder {
 	    void    : Node::new(Expr::Void),
 	    this    : Node::new(Expr::This),
 	    in_     : Node::new(Expr::In),
+	    partial : Node::new(Expr::Partial),
 	    t_void  : Node::new(TypeTag::Void),
 	    t_none  : Node::new(TypeTag::None),
 	    t_bool  : Node::new(TypeTag::Bool),

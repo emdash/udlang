@@ -377,9 +377,9 @@ InvTerm: ExprNode = {
 // To simplify the grammar, templates are assumed not to return a
 // value and are purely used for their effects.
 TemplateCall: StmtNode = {
-    <func:Selection> "(" <args:ExprList> ")" <delegate:Block>
+    <func:Selection> "(" <args:Args> ")" <delegate:Block>
 	=> ast.template_call(func, &args, delegate),
-    <func:Selection> "(" <args:ExprList> ")" ";"
+    <func:Selection> "(" <args:Args> ")" ";"
         => ast.expr_for_effect(ast.call(func, &args))
 };
 
@@ -387,7 +387,7 @@ TemplateCall: StmtNode = {
 // We want indexing and selection to bind before function calls, so that
 // foo.bar(a) parses as ((dot foo bar) a), not (dot foo (bar a))
 Call: ExprNode = {
-    <func:Call> "(" <args:ExprList> ")" => ast.call(func, &args),
+    <func:Call> "(" <args:Args> ")" => ast.call(func, &args),
     Selection
 }
 
@@ -411,7 +411,7 @@ Term: ExprNode = {
     Str => ast.s(<>),
     Boolean => ast.b(<>),
     "(" <a:Expr> ")" => a,
-    "[" <l:ExprList> "]" => ast.list(&l),
+    "[" <l:Comma<Expr>> "]" => ast.list(&l),
     "{" <m:MapItems> "}" => ast.map(&m),
 };
 
@@ -423,8 +423,15 @@ MapItem: (&'input str, ExprNode) = {
 }
 
 
-// Any commma-separated list of values.
-ExprList = Comma<Expr>;
+// Function call arguments
+Args: Vec<ExprNode> = Comma<Arg>;
+
+
+// Either an argument or a placeholder for partial application.
+Arg: ExprNode = {
+    Expr,
+    "$" => ast.partial.clone()
+}
 
 
 // So far only used in maps.

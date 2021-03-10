@@ -229,6 +229,31 @@ mod tests {
                 ]
             )
         );
+
+	assert_expr(
+	    "foo($, 1, \"baz\")",
+	    ast.call(
+		ast.id("foo"),
+		&[ast.partial.clone(),
+		  ast.i(1),
+		  ast.s("baz")
+		]
+	    )
+	);
+
+	assert_statement(
+	    "let y = foo($, 1, \"baz\");",
+	    ast.def(
+		"y",
+		ast.call(
+		    ast.id("foo"),
+		    &[ast.partial.clone(),
+		      ast.i(1),
+		      ast.s("baz")
+		    ]
+		)
+	    )
+	);
     }
 
     #[test]

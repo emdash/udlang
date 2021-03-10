@@ -92,6 +92,7 @@ impl TypeChecker {
             Expr::Point(_, _)        => Ok(Node::new(TypeTag::Point)),
 	    Expr::This               => self.eval_this(),
 	    Expr::In                 => self.eval_in(),
+	    Expr::Partial            => Err(TypeError::NotImplemented),
             Expr::List(items)        => self.eval_list(items),
             Expr::Map(items)         => self.eval_map(items),
             Expr::Id(name)           => self.eval_id(name),
