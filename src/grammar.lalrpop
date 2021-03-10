@@ -14,9 +14,13 @@ grammar(ast: &Builder);
 
 // Program Entry Point
 pub Program: ast::Program = {
-    VersionDecl <Script>,
+    Shebang? VersionDecl <Script>,
     VersionDecl <Library>
 }
+
+
+// This is to allow compatibility unix shebang syntax.
+Shebang: () = r"#.*\n";
 
 
 // This is hard-coded for now. Later on this will be used to
@@ -460,3 +464,13 @@ Id: &'input str       = r"[a-z_][A-Za-z0-9_]*" => <>;
 TypeName: &'input str = r"[A-Z][A-Za-z0-9_]*" => <>;
 Boolean: bool         = {"true" => true, "false" => false};
 Str: &'input str      = <s:r#""(([^\\"]|\\.)*)""#> => &s[1..(s.len() - 1)];
+
+
+// Skip whitespace and comments.
+match {
+    r"\s*" => { },
+    r"//[^\n\r]*[\n\r]*" => { },
+    r"/\*([^\*]*\*+[^\*/])*([^\*]*\*+|[^\*])*\*/" => { },
+} else {
+    _
+}

@@ -1085,6 +1085,50 @@ mod tests {
 	);
     }
 
+    #[test]
+    fn test_shebang() {
+	let ast = Builder::new();
+	assert_prog(
+	    r#"#! foo bar baz"
+            version 0.1-pre_mvp;
+            script "Test Shebang";
+            input Str;
+            output [Str | Float];
+            "#,
+	    ast.script(
+		"Test Shebang",
+		&[],
+		ast.t_str.clone(),
+		ast.t_list(ast.union(&[ast.t_str.clone(), ast.t_float.clone()])),
+		&[]
+	    )
+	);
+    }
+
+    #[test]
+    fn test_comments() {
+	let ast = Builder::new();
+	assert_prog(
+	    r#"#! foo bar baz"
+            version 0.1-pre_mvp;
+            script "Test Comments";
+            // Here's a short comment.
+            input Str;
+            /* Here's a lengthy comment.
+             * It spans multiple
+             * lines. But it ends here. */
+            output [Str | Float];
+            "#,
+	    ast.script(
+		"Test Comments",
+		&[],
+		ast.t_str.clone(),
+		ast.t_list(ast.union(&[ast.t_str.clone(), ast.t_float.clone()])),
+		&[]
+	    )
+	);
+    }
+
     // Tests for edge cases and regressions
     
     // So far there are none.
