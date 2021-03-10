@@ -241,7 +241,7 @@ pub enum Statement {
     Import(Import),
     Export(Export),
     ExprForEffect(ExprNode),
-    Emit(String, Seq<Expr>),
+    Emit(ExprNode),
     Def(String, ExprNode),
     TypeDef(String, TypeNode),
     ListIter(String, ExprNode, StmtNode),
@@ -609,12 +609,8 @@ impl Builder {
 	}
     }
 
-    pub fn emit(&self, name: &str, exprs: &[ExprNode]) -> StmtNode {
-	let exprs = exprs
-	    .iter()
-	    .cloned()
-	    .collect();
-	self.statement(Statement::Emit(name.to_string(), exprs))
+    pub fn emit(&self, expr: ExprNode) -> StmtNode {
+	self.statement(Statement::Emit(expr))
     }
 
     pub fn def(&self, name: &str, expr: ExprNode) -> StmtNode {

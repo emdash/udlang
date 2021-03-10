@@ -218,10 +218,10 @@ TypeDef: StmtNode
     => ast.typedef(name, t);
 
 
-// Used for raw cairo operations.
+// Send a value downstream on the output channel.
 Effect: StmtNode
-    = "out" <name:Id> <exprs:ExprList> ";"
-    => ast.emit(name, &exprs);
+    = "out" <value:Expr> ";"
+    => ast.emit(value);
 
 
 // Bind a name to a value.
