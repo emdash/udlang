@@ -247,7 +247,7 @@ template element(tag: Str, attrs: Map<Str> = {}) using children {
   out "<${tag} ";
   
   // Append any attributes to the output.
-  for attr, value in attrs {
+  for (attr, value) in attrs {
     out " ${quote(attr)}=${quote(value)}";
   }
   
