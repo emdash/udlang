@@ -1,5 +1,6 @@
 use std::collections::HashMap;
 use std::rc::Rc;
+use std::cell::RefCell;
 use std::ops::Deref;
 
 
@@ -237,6 +238,8 @@ pub enum Expr {
 // ADT for effects and control-flow.
 #[derive(Clone, Debug, PartialEq)]
 pub enum Statement {
+    Import(Import),
+    Export(Export),
     ExprForEffect(ExprNode),
     Emit(String, Seq<Expr>),
     Def(String, ExprNode),
@@ -247,12 +250,52 @@ pub enum Statement {
 }
 
 
-// The entire program.
+// Just extract the list of exports here.
 #[derive(Clone, Debug, PartialEq)]
-pub struct Program {
-    pub description: String,
-    pub params: HashMap<String, (TypeTag, String)>,
-    pub code: Seq<Statement>
+pub enum Export {
+    Name(String),
+    Decl(StmtNode)
+}
+
+
+// An import must either name an entire module or select specific
+// items from a module.
+#[derive(Clone, Debug, PartialEq)]
+pub struct Import {
+    root: String,
+    selection: Option<ImportSelector>
+}
+
+
+// These are the different ways to select items from a module.
+#[derive(Clone, Debug, PartialEq)]
+pub enum ImportSelector {
+    Itself,
+    All,
+    Item(String),
+    Alias(String, String),
+    Group(Vec<ImportSelector>),
+    Nested(String, Node<ImportSelector>)
+}
+
+
+// Represents a single source file.
+//
+// A file has to decide whether it is a script or a library. It cannot
+// be both.
+#[derive(Clone, Debug, PartialEq)]
+pub enum Program {
+    Script {
+	desc: String,
+	decls: Seq<Statement>,
+	input: TypeNode,
+	output: TypeNode,
+	body: Seq<Statement>
+    },
+    Library {
+	desc: String,
+	decls: Seq<Statement>,
+    }
 }
 
 
@@ -277,6 +320,7 @@ pub struct Builder {
     pub t_str:   TypeNode,
     pub t_any:   TypeNode,
     pub t_this:  TypeNode,
+    pub exports: RefCell<Vec<Export>>,
     // TBD: hashtables to cache constants, strings, exprs, and
     // statements.
 }
@@ -311,7 +355,8 @@ impl Builder {
 	    t_point : Node::new(TypeTag::Point),
 	    t_str   : Node::new(TypeTag::Str),
 	    t_any   : Node::new(TypeTag::Any),
-	    t_this  : Node::new(TypeTag::This)
+	    t_this  : Node::new(TypeTag::This),
+	    exports : RefCell::new(Vec::new()),
 	}
     }
 
@@ -625,5 +670,79 @@ impl Builder {
             map,
             body
 	))
+    }
+
+    // Export an identifier or type name.
+    pub fn export(&self, name: &str) -> StmtNode {
+	self.statement(Statement::Export(Export::Name(name.to_string())))
+    }
+    
+
+    // Wrap the underlying decl as an export.
+    pub fn export_decl(&self, decl: StmtNode) -> StmtNode {
+	match *decl {
+	    Statement::Def(_, _) => (),
+	    Statement::TypeDef(_, _) => (),
+	    _ => panic!("Unreachable.")
+	}
+	self.statement(Statement::Export(Export::Decl(decl)))
+    }
+
+    pub fn import(
+	&self,
+	root: &str,
+	selection: Option<ImportSelector>
+    ) -> StmtNode {
+	let root = root.to_string();
+	self.statement(Statement::Import(Import {root, selection}))
+    }
+
+    pub fn import_item(&self, name: &str) -> ImportSelector {
+	ImportSelector::Item(name.to_string())
+    }
+
+    pub fn import_alias(&self, name: &str, alias: &str) -> ImportSelector {
+	ImportSelector::Alias(name.to_string(), alias.to_string())
+    }
+
+    pub fn import_nested(
+	&self,
+	name: &str,
+	sel: ImportSelector
+    ) -> ImportSelector {
+	// XXX: This use of Node::new() is allowable for now.
+	ImportSelector::Nested(name.to_string(), Node::new(sel))
+    }
+
+    pub fn import_group(&self, items: &[ImportSelector]) -> ImportSelector {
+	ImportSelector::Group(items.to_vec())
+    }
+
+    pub fn script(
+	&self,
+	desc: &str,
+	decls: &[StmtNode],
+	input: TypeNode,
+	output:TypeNode,
+	body: &[StmtNode]
+    ) -> Program {
+	Program::Script {
+	    desc: desc.to_string(),
+	    decls: decls.to_vec(),
+	    input,
+	    output,
+	    body: body.to_vec()
+	}
+    }
+
+    pub fn library(
+	&self,
+	desc: &str,
+	decls: &[StmtNode]
+    ) -> Program {
+	Program::Library {
+	    desc: desc.to_string(),
+	    decls: decls.to_vec(),
+	}
     }
 }

@@ -326,6 +326,12 @@ impl TypeChecker {
 	// succeeds, depedning on the type of statement, we check it
 	// against what we expect.
         match stmt.deref() {
+	    Statement::Import(_) => Err(TypeError::NotImplemented)?,
+	    Statement::Export(exp) => match exp {
+		Export::Decl(decl) => self.check_statement(decl),
+		Export::Name(_) => Err(TypeError::NotImplemented)?
+	    }?,
+		
             Statement::ExprForEffect(body) => {
                 self.is_void(body)?;
             },
@@ -377,9 +383,22 @@ impl TypeChecker {
     // Ok(()).  Eventually, this should return some useful summary of
     // the type information we collected to be used for code-gen.
     pub fn check_program(&self, prog: Program) -> TypeCheck {
-        for stmt in prog.code {
-            self.check_statement(&stmt)?;
-        }
+	match prog {
+	    Program::Script { desc: _, decls, input: _, output: _, body } => {
+		for statement in decls {
+		    self.check_statement(&statement)?;
+		}
+		for statement in body {
+		    self.check_statement(&statement)?;
+		}
+	    },
+	    Program::Library { desc: _, decls } => {
+		for statement in decls {
+		    self.check_statement(&statement)?;
+		}
+	    }
+	    
+	};
         Ok(())
     }
 }
