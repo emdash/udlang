@@ -222,6 +222,7 @@ pub enum Expr {
     Str(String),
     Point(f64, f64),
     This, // the lowercase `self` keyword, but we can't call it that.
+    In, // The `in` keyword.
     List(Seq<Expr>),
     Map(Map<Expr>),
     Id(String),
@@ -312,6 +313,7 @@ pub struct Builder {
     // Singleton values that can be used directly
     pub void:  ExprNode,
     pub this:  ExprNode,
+    pub in_: ExprNode,
     pub t_void:  TypeNode,
     pub t_none:  TypeNode,
     pub t_bool:  TypeNode,
@@ -348,6 +350,7 @@ impl Builder {
 	Self {
 	    void    : Node::new(Expr::Void),
 	    this    : Node::new(Expr::This),
+	    in_     : Node::new(Expr::In),
 	    t_void  : Node::new(TypeTag::Void),
 	    t_none  : Node::new(TypeTag::None),
 	    t_bool  : Node::new(TypeTag::Bool),

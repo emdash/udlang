@@ -91,6 +91,7 @@ impl TypeChecker {
             Expr::Str(_)             => Ok(Node::new(TypeTag::Str)),
             Expr::Point(_, _)        => Ok(Node::new(TypeTag::Point)),
 	    Expr::This               => self.eval_this(),
+	    Expr::In                 => self.eval_in(),
             Expr::List(items)        => self.eval_list(items),
             Expr::Map(items)         => self.eval_map(items),
             Expr::Id(name)           => self.eval_id(name),
@@ -106,6 +107,10 @@ impl TypeChecker {
     }
 
     pub fn eval_this(&self) -> TypeExpr {
+	Err(TypeError::NotImplemented)
+    }
+
+    pub fn eval_in(&self) -> TypeExpr {
 	Err(TypeError::NotImplemented)
     }
 

@@ -399,6 +399,7 @@ Selection: ExprNode = {
 // Literals of any type except lambdas.
 Term: ExprNode = {
     "self" => ast.this.clone(),
+    "in" => ast.in_.clone(),
     Id => ast.id(<>),
     Int => ast.i(<>),
     Float => ast.f(<>),

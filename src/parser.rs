@@ -625,6 +625,41 @@ mod tests {
         );
     }
 
+    #[test]
+    fn test_in_expr() {
+	let ast = Builder::new();
+	assert_expr("in", ast.in_.clone());
+	assert_expr("in.foo", ast.dot(ast.in_.clone(), "foo"));
+	assert_expr("in[0]", ast.index(ast.in_.clone(), ast.i(0)));
+	assert_statement("let y = in;", ast.def("y", ast.in_.clone()));
+
+	assert_statement(
+	    r#"
+            for i in in { out i; }
+            "#,
+	    ast.list_iter(
+		"i",
+		ast.in_.clone(),
+		ast.expr_for_effect(
+		    ast.block(&[ast.emit(ast.id("i"))], ast.void.clone())
+		)
+	    )
+	);
+
+	assert_statement(
+	    r#"
+            for i in in.items { out i; }
+            "#,
+	    ast.list_iter(
+		"i",
+		ast.dot(ast.in_.clone(), "items"),
+		ast.expr_for_effect(
+		    ast.block(&[ast.emit(ast.id("i"))], ast.void.clone())
+		)
+	    )
+	);
+    }
+
     // Test parsing of Types and Type Expressions
     
     #[test]
