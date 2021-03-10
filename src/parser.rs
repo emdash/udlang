@@ -645,6 +645,13 @@ mod tests {
 		"x" => Member::Field(ast.t_int.clone())
 	    })
 	);
+
+	assert_type(
+	    r#"{field? x: Int}"#,
+	    ast.record(&alist!{
+		"x" => Member::OptionField(ast.t_int.clone())
+	    })
+	);
     }
 
     #[test]

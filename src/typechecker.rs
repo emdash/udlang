@@ -72,6 +72,7 @@ impl TypeChecker {
 	if let Some(member) = members.iter().find(|m| m.0 == *name) {
 	    match &*member.1 {
 		Member::Field(tt) => Ok(tt.clone()),
+		Member::OptionField(tt) => Ok(tt.clone()),
 		Member::Method(args, ret, body) => self.eval_lambda(args, ret, body),
 		Member::StaticValue(t, _) => Ok(t.clone()),
 		Member::StaticMethod(args, ret, body) => self.eval_lambda(args, ret, body)

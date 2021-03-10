@@ -142,6 +142,8 @@ pub Record: TypeNode
 pub Member: (&'input str, ast::Member) = {
     "field" <name:Id> ":" <t:Type>
 	=> ast.field(name, t),
+    "field?" <name:Id> ":" <t:Type>
+	=> ast.opt_field(name, t),
     "method" <name:Id> <args:Arglist> "->" <ret:Type> "=" <body:Expr>
 	=> ast.method(name, &args, ret, body),
     "const" <name:Id> ":" <t:Type> "=" <value:Expr>

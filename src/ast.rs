@@ -205,6 +205,7 @@ pub enum TypeTag {
 #[derive(Clone, Debug, PartialEq)]
 pub enum Member {
     Field(TypeNode),
+    OptionField(TypeNode),
     Method(AList<TypeTag>, TypeNode, ExprNode),
     StaticValue(TypeNode, ExprNode),
     StaticMethod(AList<TypeTag>, TypeNode, ExprNode)
@@ -551,6 +552,14 @@ impl Builder {
 
     pub fn field<'a>(&self, name: &'a str, t: TypeNode) -> (&'a str, Member) {
 	(name, Member::Field(t))
+    }
+
+    pub fn opt_field<'a>(
+	&self,
+	name: &'a str,
+	t: TypeNode
+    ) -> (&'a str, Member) {
+	(name, Member::OptionField(t))
     }
 
     pub fn method<'a, 'b>(
