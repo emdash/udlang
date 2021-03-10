@@ -379,9 +379,9 @@ InvTerm: ExprNode = {
 // To simplify the grammar, templates are assumed not to return a
 // value and are purely used for their effects.
 TemplateCall: StmtNode = {
-    <func:Selection> "(" <args:Args> ")" <delegate:Block>
+    <func:Call> "(" <args:Args> ")" <delegate:Block>
 	=> ast.template_call(func, &args, delegate),
-    <func:Selection> "(" <args:Args> ")" ";"
+    <func:Call> "(" <args:Args> ")" ";"
         => ast.expr_for_effect(ast.call(func, &args))
 };
 
@@ -390,15 +390,9 @@ TemplateCall: StmtNode = {
 // foo.bar(a) parses as ((dot foo bar) a), not (dot foo (bar a))
 Call: ExprNode = {
     <func:Call> "(" <args:Args> ")" => ast.call(func, &args),
-    Selection
-}
-
-
-// XXX: see github issue #13
-Selection: ExprNode = {
-    <obj:Selection> "." <id:Id> => ast.dot(obj, id),
-    <obj:Selection> ".?." <id:Id> => ast.has(obj, id),
-    <obj:Selection> "[" <e:Expr> "]" => ast.index(obj, e),
+    <obj:Call> "." <id:Id> => ast.dot(obj, id),
+    <obj:Call> ".?." <id:Id> => ast.has(obj, id),
+    <obj:Call> "[" <e:Expr> "]" => ast.index(obj, e),
     Term
 }
 

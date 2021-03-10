@@ -254,6 +254,16 @@ mod tests {
 		)
 	    )
 	);
+
+	assert_expr(
+	    "foo()()",
+	    ast.call(ast.call(ast.id("foo"), &[]), &[])
+	);
+
+	assert_expr(
+	    "foo()()()",
+	    ast.call(ast.call(ast.call(ast.id("foo"), &[]), &[]), &[])
+	);
     }
 
     #[test]
@@ -316,8 +326,12 @@ mod tests {
             "foo[3][4]",
             ast.index(ast.index(ast.id("foo"), ast.i(3)), ast.i(4))
         );
+    }
 
-        assert_expr(
+    #[test]
+    fn test_mixed_selections() {
+	let ast = Builder::new();
+	assert_expr(
             "foo[3].bar.baz[5][6]",
             ast.index(
                 ast.index(
@@ -334,9 +348,45 @@ mod tests {
             )
         );
 
-        // XXX: see issue #8 in github
-	// assert_expr("foo()[3]", index(call(id("foo"), vec!{}), Int(3)));
-	// assert_expr("foo()bar", index(dot(id("foo"), vec!{}), "bar"));
+	assert_expr(
+            "foo[3].bar.baz[5][6].?.baz",
+	    ast.has(
+		ast.index(
+                    ast.index(
+			ast.dot(
+                            ast.dot(
+				ast.index(ast.id("foo"), ast.i(3)),
+				"bar"
+                            ),
+                            "baz"
+			),
+			ast.i(5)
+                    ),
+                    ast.i(6)
+		),
+		"baz"
+	    )
+        );
+    }
+
+    #[test]
+    fn test_call_chaining() {
+	let ast = Builder::new();
+
+	assert_expr(
+	    "foo().bar()",
+	    ast.call(ast.dot(ast.call(ast.id("foo"), &[]), "bar"), &[])
+	);
+
+	assert_expr(
+	    "foo()[3]",
+	    ast.index(ast.call(ast.id("foo"), &[]), ast.i(3))
+	);
+
+	assert_expr(
+	    "foo().bar",
+	    ast.dot(ast.call(ast.id("foo"), &[]), "bar")
+	);
 
         assert_expr(
             "(foo())[3]",
