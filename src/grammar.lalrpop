@@ -60,7 +60,7 @@ LibDecl: StmtNode = {
 }
 
 
-// Any statement which introduces lexical bindings is a "declaration".
+// Any statement which introduces lexical bindings, is a "declaration".
 Decl: StmtNode = {
     Import,
     FuncDef,
@@ -103,6 +103,7 @@ pub TypeMaybe: TypeNode = {
     <TypeUnion>   "?"              => ast.option(<>),
     TypeUnion,
 }
+
 
 pub TypeUnion: TypeNode = {
     "|" <TypeUnion> => <>,
@@ -199,6 +200,7 @@ ProcDef: StmtNode
 
 InputDecl: TypeNode
     = "input" <Type> ";" => <>;
+
 
 OutputDecl: TypeNode
     = "output" <Type> ";" => <>;
