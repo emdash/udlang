@@ -22,7 +22,7 @@ pub Program: ast::Program = {
 // This is hard-coded for now. Later on this will be used to
 // disambiguate or warn about incompatible languge versions.
 VersionDecl: ()
-  = "Version" ":" "0.1-pre-mvp" ";";
+  = "version" "0.1-pre_mvp" ";";
 
 
 // Scripts must declare their input and output types.
@@ -37,7 +37,7 @@ Script: ast::Program
       <decls:Decl*>
       <i:InputDecl>
       <o:OutputDecl>
-      <body:Statement+>
+      <body:Statement*>
     => ast.script(desc, &decls, i, o, &body);
 
 

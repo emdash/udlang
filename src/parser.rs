@@ -54,6 +54,15 @@ mod tests {
         );
     }
 
+
+    fn assert_prog(text: &'static str, ast: ast::Program) {
+	let builder = ast::Builder::new();
+        assert_eq!(
+	    grammar::ProgramParser::new().parse(&builder, text).unwrap(),
+            ast
+        );
+    }
+
     // Test Parsing of Expressions
 
     #[test]
@@ -865,6 +874,150 @@ mod tests {
 		    ast.dot(ast.id("a"), "x"),
 		    ast.dot(ast.id("b"), "x")
 		)
+	    )
+	);
+    }
+
+    #[test]
+    fn test_import() {
+	let ast = Builder::new();
+	assert_prog(
+	    r#"
+            version 0.1-pre_mvp;
+            script "Minimal Import Test";
+            import foo;
+            input Str;
+            output Str;
+            "#,
+	    ast.script(
+		"Minimal Import Test",
+		&[ast.import("foo", None)],
+		ast.t_str.clone(),
+		ast.t_str.clone(),
+		&[]
+	    )
+	);
+    }
+
+    #[test]
+    fn test_import_self() {
+	let ast = Builder::new();
+	assert_prog(
+	    r#"
+            version 0.1-pre_mvp;
+            script "Minimal Import Test";
+            import foo._;
+            input Str;
+            output Str;
+            "#,
+	    ast.script(
+		"Minimal Import Test",
+		&[ast.import("foo", Some(ast::ImportSelector::Itself))],
+		ast.t_str.clone(),
+		ast.t_str.clone(),
+		&[]
+	    )
+	);
+    }
+
+    #[test]
+    fn test_import_all() {
+	let ast = Builder::new();
+	assert_prog(
+	    r#"
+            version 0.1-pre_mvp;
+            script "Minimal Import Test";
+            import foo.*;
+            input Str;
+            output Str;
+            "#,
+	    ast.script(
+		"Minimal Import Test",
+		&[ast.import("foo", Some(ast::ImportSelector::All))],
+		ast.t_str.clone(),
+		ast.t_str.clone(),
+		&[]
+	    )
+	);
+    }
+
+    #[test]
+    fn test_import_item() {
+	let ast = Builder::new();
+	assert_prog(
+	    r#"
+            version 0.1-pre_mvp;
+            script "Minimal Import Test";
+            import foo.bar;
+            input Str;
+            output Str;
+            "#,
+	    ast.script(
+		"Minimal Import Test",
+		&[ast.import("foo", Some(ast.import_item("bar")))],
+		ast.t_str.clone(),
+		ast.t_str.clone(),
+		&[]
+	    )
+	);
+    }
+
+    #[test]
+    fn test_import_alias() {
+	let ast = Builder::new();
+	assert_prog(
+	    r#"
+            version 0.1-pre_mvp;
+            script "Minimal Import Test";
+            import foo.bar as baz;
+            input Str;
+            output [Str | Float];
+            "#,
+	    ast.script(
+		"Minimal Import Test",
+		&[ast.import("foo", Some(ast.import_alias("bar", "baz")))],
+		ast.t_str.clone(),
+		ast.t_list(ast.union(&[ast.t_str.clone(), ast.t_float.clone()])),
+		&[]
+	    )
+	);
+    }
+
+    #[test]
+    fn test_import_multi() {
+	let ast = Builder::new();
+	assert_prog(
+	    r#"
+            version 0.1-pre_mvp;
+            script "Minimal Import Test";
+            import bands.{
+              _,
+              beatles.{george, paul, john, ringo},
+              stones.mcjagger,
+              greatful_dead.*
+            };
+            input Str;
+            output Str;
+            "#,
+	    ast.script(
+		"Minimal Import Test",
+		&[ast.import(
+		    "bands",
+		    Some(ast.import_group(&[
+			ast::ImportSelector::Itself,
+			ast.import_nested("beatles", ast.import_group(&[
+			    ast.import_item("george"),
+			    ast.import_item("paul"),
+			    ast.import_item("john"),
+			    ast.import_item("ringo")
+			])),
+			ast.import_nested("stones", ast.import_item("mcjagger")),
+			ast.import_nested("greatful_dead", ast::ImportSelector::All)
+		    ]))
+		)],
+		ast.t_str.clone(),
+		ast.t_str.clone(),
+		&[]
 	    )
 	);
     }
