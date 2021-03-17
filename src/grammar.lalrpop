@@ -82,6 +82,8 @@ pub Statement: StmtNode = {
     Let,
     EffectExpr,
     Iteration,
+    EffectCapture,
+    Suppose
 }
 
 
@@ -256,6 +258,10 @@ Iteration: StmtNode = {
 }
 
 
+// Binds to captured output in suppose()
+EffectCapture: StmtNode = "..." ";" => ast.effect_capture.clone();
+
+
 // Any expression which is not a Block.
 //
 // Needed to avoid the abiguity of nesting blocks.
@@ -286,12 +292,18 @@ CondClause: (ExprNode, ExprNode)
     => (pred, body);
 
 
+// The subjunctive construct, as documented in github issue #20
+Suppose: StmtNode
+    = "suppose" "(" <delegate:Expr> ")" <branch:Block> "else" <leaf:Block>
+    => ast.suppose(delegate, ast.expr_for_effect(branch), ast.expr_for_effect(leaf));
+
+
 // Single paramater in a function signature
 Param: (&'input str, TypeNode)
     = <name:Id> ":" <t:Type>
     => (name, t);
 
-
+ 
 // The argument list of a function signature
 Arglist: Vec<(&'input str, TypeNode)>
     = "(" <args:Comma<Param>> ")"

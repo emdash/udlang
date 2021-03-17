@@ -1203,6 +1203,35 @@ mod tests {
 	    )
 	);
     }
+    
+    #[test]
+    fn test_suppose() {
+	let ast = Builder::new();
+	assert_statement(
+	    r#"
+            suppose(she_may_love_you()) {
+               out "She loves you,";
+               ...;
+               ...;
+               ...;
+            } else {
+               out "Yesterdayyyyyy.....";
+            }
+            "#,
+	    ast.suppose(
+		ast.call(ast.id("she_may_love_you"), &[]),
+		ast.expr_for_effect(ast.block(&[
+		    ast.emit(ast.s("She loves you,")),
+		    ast.effect_capture.clone(),
+		    ast.effect_capture.clone(),
+		    ast.effect_capture.clone()
+		], ast.void.clone())),
+		ast.expr_for_effect(ast.block(&[
+		    ast.emit(ast.s("Yesterdayyyyyy....."))
+		], ast.void.clone()))
+	    )
+	);
+    }
 
     // Tests for edge cases and regressions
     

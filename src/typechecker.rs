@@ -339,6 +339,9 @@ impl TypeChecker {
 		Export::Decl(decl) => self.check_statement(decl),
 		Export::Name(_) => Err(TypeError::NotImplemented)?
 	    }?,
+
+	    Statement::Suppose(_, _, _) => Err(TypeError::NotImplemented)?,
+	    Statement::EffectCapture => Err(TypeError::NotImplemented)?,
 		
             Statement::ExprForEffect(body) => {
                 self.is_void(body)?;

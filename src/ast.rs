@@ -251,6 +251,8 @@ pub enum Statement {
     ListIter(String, ExprNode, StmtNode),
     MapIter(String, String, ExprNode, StmtNode),
     While(ExprNode, StmtNode),
+    Suppose(ExprNode, StmtNode, StmtNode),
+    EffectCapture,
 }
 
 
@@ -326,6 +328,7 @@ pub struct Builder {
     pub t_str:   TypeNode,
     pub t_any:   TypeNode,
     pub t_this:  TypeNode,
+    pub effect_capture: StmtNode,
     pub exports: RefCell<Vec<Export>>,
     // TBD: hashtables to cache constants, strings, exprs, and
     // statements.
@@ -365,6 +368,7 @@ impl Builder {
 	    t_any   : Node::new(TypeTag::Any),
 	    t_this  : Node::new(TypeTag::This),
 	    exports : RefCell::new(Vec::new()),
+	    effect_capture: Node::new(Statement::EffectCapture),
 	}
     }
 
@@ -460,6 +464,15 @@ impl Builder {
     ) -> ExprNode {
 	let conds = conds.iter().cloned().collect();
 	self.subexpr(Expr::Cond(conds, else_))
+    }
+
+    pub fn suppose(
+	&self,
+	delegate: ExprNode,
+	branch: StmtNode,
+	leaf: StmtNode
+    ) -> StmtNode {
+	self.statement(Statement::Suppose(delegate, branch, leaf))
     }
 
     pub fn block(

@@ -4,7 +4,6 @@ use udlang::ast::Builder;
 use std::io::{
     BufReader,
     BufRead,
-    Read,
     stdin
 };
 
@@ -17,7 +16,7 @@ fn main() {
     loop {
 	let mut reader = BufReader::new(stdin());
 	let mut line = String::new();
-	reader.read_line(&mut line);
+	reader.read_line(&mut line).unwrap();
 	dump_expr(&line);
     }
 }
