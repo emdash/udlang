@@ -2,6 +2,7 @@ use std::collections::HashMap;
 use std::rc::Rc;
 use std::cell::RefCell;
 use std::ops::Deref;
+use std::hash::Hash;
 
 
 // Associative list macro for slices of named pairs with python-like
@@ -126,7 +127,7 @@ pub type MemberNode = Node<Member>;
 // transformations.
 
 // Arithmetic and logic operations
-#[derive(Copy, Clone, Debug, PartialEq, Eq)]
+#[derive(Copy, Clone, Debug, PartialEq, Eq, Hash)]
 pub enum BinOp {
     Add,
     Sub,
@@ -149,7 +150,7 @@ pub enum BinOp {
 }
 
 
-#[derive(Copy, Clone, Debug, PartialEq, Eq)]
+#[derive(Copy, Clone, Debug, PartialEq, Eq, Hash)]
 pub enum UnOp {
     Not,
     Neg,

@@ -17,6 +17,7 @@
 // <https://www.gnu.org/licenses/>.
 #[macro_use]
 extern crate lalrpop_util;
+extern crate eq_float;
 
 #[macro_use]
 pub mod ast;
@@ -24,3 +25,4 @@ pub mod env;
 lalrpop_mod!(pub grammar);
 pub mod parser;
 pub mod typechecker;
+pub mod ir;
