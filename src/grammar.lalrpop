@@ -13,11 +13,67 @@ grammar(ast: &Builder);
 
 
 // Program Entry Point
-pub Program: ast::Seq<ast::Statement>
-    = "Version" ":" ".1-alpha" ";" <Statement*>;
+pub Program: ast::Program = {
+    Shebang? VersionDecl <Script>,
+    VersionDecl <Library>
+}
 
 
-// Statement entry point.
+// This is to allow compatibility unix shebang syntax.
+Shebang: () = r"#.*\n";
+
+
+// This is hard-coded for now. Later on this will be used to
+// disambiguate or warn about incompatible languge versions.
+VersionDecl: ()
+  = "version" "0.1-pre_mvp" ";";
+
+
+// Scripts must declare their input and output types.
+//
+// Scripts cannot export type, value, or function definitions.
+//
+// The IO declarations divide the header from the body of a script.
+//
+// Side effects are allowed only within the script body.
+Script: ast::Program
+    = "script" <desc:Str> ";"
+      <decls:Decl*>
+      <i:InputDecl>
+      <o:OutputDecl>
+      <body:Statement*>
+    => ast.script(desc, &decls, i, o, &body);
+
+
+// Libraries may *not* contain IO declarations.
+//
+// Libraries must contain only type definitions, value definitions,
+// function definitions, or exports declarations.
+Library: ast::Program
+    = "lib" <desc:Str> ";" <decls:LibDecl*>
+    => ast.library(desc, &decls);
+
+
+LibDecl: StmtNode = {
+    Decl,
+    Export
+}
+
+
+// Any statement which introduces lexical bindings, is a "declaration".
+Decl: StmtNode = {
+    Import,
+    FuncDef,
+    ProcDef,
+    TypeDef,
+    Let,
+}
+
+
+// This is what is allowed in a "primary" statement context. A
+// "primary" statement context is one of the following:
+// - inside a block, before the yielding expression.
+// - a script body.
 pub Statement: StmtNode = {
     FuncDef,
     ProcDef,
@@ -26,6 +82,8 @@ pub Statement: StmtNode = {
     Let,
     EffectExpr,
     Iteration,
+    EffectCapture,
+    Suppose
 }
 
 
@@ -47,6 +105,7 @@ pub TypeMaybe: TypeNode = {
     <TypeUnion>   "?"              => ast.option(<>),
     TypeUnion,
 }
+
 
 pub TypeUnion: TypeNode = {
     "|" <TypeUnion> => <>,
@@ -90,12 +149,42 @@ pub Record: TypeNode
 pub Member: (&'input str, ast::Member) = {
     "field" <name:Id> ":" <t:Type>
 	=> ast.field(name, t),
+    "field?" <name:Id> ":" <t:Type>
+	=> ast.opt_field(name, t),
     "method" <name:Id> <args:Arglist> "->" <ret:Type> "=" <body:Expr>
 	=> ast.method(name, &args, ret, body),
     "const" <name:Id> ":" <t:Type> "=" <value:Expr>
 	=> ast.static_val(name, t, value),
     "static" <name:Id> <args:Arglist> "->" <ret:Type> "=" <body:Expr>
 	=> ast.static_method(name, &args, ret, body),
+}
+
+
+// Export some item from a library.
+Export: StmtNode = {
+    "export" <id:Id> ";"                => ast.export(id),
+    "export" <t:TypeName> ";"           => ast.export(t),
+    "export" <id:Id> "=" <val:Expr> ";" => ast.export_decl(ast.def(id, val)),
+    "export" <fd:FuncDef>               => ast.export_decl(fd),
+    "export" <pd:ProcDef>               => ast.export_decl(pd),
+    "export" <td:TypeDef>               => ast.export_decl(td),
+}
+
+
+// Import a library, and / or items from a library.
+Import: StmtNode
+    = "import" <module:Id> <sel:("." <ImportSelector>)?> ";"
+    => ast.import(module, sel);
+
+
+// The different ways to select items from a library.
+ImportSelector: ast::ImportSelector = {
+    "_"                              => ast::ImportSelector::Itself,
+    "*"                              => ast::ImportSelector::All,
+    <item:Id>                        => ast.import_item(item),
+    <item:Id> "as" <alias:Id>        => ast.import_alias(item, alias),
+    <item:Id> "." <n:ImportSelector> => ast.import_nested(item, n),
+    "{" <Comma<ImportSelector>> "}"  => ast.import_group(&<>)
 }
 
 
@@ -109,6 +198,14 @@ FuncDef: StmtNode
 ProcDef: StmtNode
     = "proc" <name:Id> <args:Arglist> <body:Block>
     => ast.def(name, ast.lambda(&args, ast.t_void.clone(), body));
+
+
+InputDecl: TypeNode
+    = "input" <Type> ";" => <>;
+
+
+OutputDecl: TypeNode
+    = "output" <Type> ";" => <>;
 
 
 // Syntactic sugar for defining a template function.
@@ -131,10 +228,10 @@ TypeDef: StmtNode
     => ast.typedef(name, t);
 
 
-// Used for raw cairo operations.
+// Send a value downstream on the output channel.
 Effect: StmtNode
-    = "out" <name:Id> <exprs:ExprList> ";"
-    => ast.emit(name, &exprs);
+    = "out" <value:Expr> ";"
+    => ast.emit(value);
 
 
 // Bind a name to a value.
@@ -159,6 +256,10 @@ Iteration: StmtNode = {
     "for" "(" <key:Id> "," <value:Id> ")" "in" <map:Expr> <body:Block>
 	=> ast.map_iter(key, value, map, ast.expr_for_effect(body))
 }
+
+
+// Binds to captured output in suppose()
+EffectCapture: StmtNode = "..." ";" => ast.effect_capture.clone();
 
 
 // Any expression which is not a Block.
@@ -191,12 +292,18 @@ CondClause: (ExprNode, ExprNode)
     => (pred, body);
 
 
+// The subjunctive construct, as documented in github issue #20
+Suppose: StmtNode
+    = "suppose" "(" <delegate:Expr> ")" <branch:Block> "else" <leaf:Block>
+    => ast.suppose(delegate, ast.expr_for_effect(branch), ast.expr_for_effect(leaf));
+
+
 // Single paramater in a function signature
 Param: (&'input str, TypeNode)
     = <name:Id> ":" <t:Type>
     => (name, t);
 
-
+ 
 // The argument list of a function signature
 Arglist: Vec<(&'input str, TypeNode)>
     = "(" <args:Comma<Param>> ")"
@@ -284,9 +391,9 @@ InvTerm: ExprNode = {
 // To simplify the grammar, templates are assumed not to return a
 // value and are purely used for their effects.
 TemplateCall: StmtNode = {
-    <func:Selection> "(" <args:ExprList> ")" <delegate:Block>
+    <func:Call> "(" <args:Args> ")" <delegate:Block>
 	=> ast.template_call(func, &args, delegate),
-    <func:Selection> "(" <args:ExprList> ")" ";"
+    <func:Call> "(" <args:Args> ")" ";"
         => ast.expr_for_effect(ast.call(func, &args))
 };
 
@@ -294,15 +401,10 @@ TemplateCall: StmtNode = {
 // We want indexing and selection to bind before function calls, so that
 // foo.bar(a) parses as ((dot foo bar) a), not (dot foo (bar a))
 Call: ExprNode = {
-    <func:Call> "(" <args:ExprList> ")" => ast.call(func, &args),
-    Selection
-}
-
-
-// XXX: see github issue #13
-Selection: ExprNode = {
-    <obj:Selection> "." <id:Id> => ast.dot(obj, id),
-    <obj:Selection> "[" <e:Expr> "]" => ast.index(obj, e),
+    <func:Call> "(" <args:Args> ")" => ast.call(func, &args),
+    <obj:Call> "." <id:Id> => ast.dot(obj, id),
+    <obj:Call> ".?." <id:Id> => ast.has(obj, id),
+    <obj:Call> "[" <e:Expr> "]" => ast.index(obj, e),
     Term
 }
 
@@ -310,13 +412,14 @@ Selection: ExprNode = {
 // Literals of any type except lambdas.
 Term: ExprNode = {
     "self" => ast.this.clone(),
+    "in" => ast.in_.clone(),
     Id => ast.id(<>),
     Int => ast.i(<>),
     Float => ast.f(<>),
     Str => ast.s(<>),
     Boolean => ast.b(<>),
     "(" <a:Expr> ")" => a,
-    "[" <l:ExprList> "]" => ast.list(&l),
+    "[" <l:Comma<Expr>> "]" => ast.list(&l),
     "{" <m:MapItems> "}" => ast.map(&m),
 };
 
@@ -328,8 +431,15 @@ MapItem: (&'input str, ExprNode) = {
 }
 
 
-// Any commma-separated list of values.
-ExprList = Comma<Expr>;
+// Function call arguments
+Args: Vec<ExprNode> = Comma<Arg>;
+
+
+// Either an argument or a placeholder for partial application.
+Arg: ExprNode = {
+    Expr,
+    "$" => ast.partial.clone()
+}
 
 
 // So far only used in maps.
@@ -369,3 +479,13 @@ Id: &'input str       = r"[a-z_][A-Za-z0-9_]*" => <>;
 TypeName: &'input str = r"[A-Z][A-Za-z0-9_]*" => <>;
 Boolean: bool         = {"true" => true, "false" => false};
 Str: &'input str      = <s:r#""(([^\\"]|\\.)*)""#> => &s[1..(s.len() - 1)];
+
+
+// Skip whitespace and comments.
+match {
+    r"\s*" => { },
+    r"//[^\n\r]*[\n\r]*" => { },
+    r"/\*([^\*]*\*+[^\*/])*([^\*]*\*+|[^\*])*\*/" => { },
+} else {
+    _
+}
