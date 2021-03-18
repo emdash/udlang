@@ -143,7 +143,7 @@ A uDLang filter to render the todo list into html might look like this:
 
 // uDLang is evolving, by mandating a version string, we guard our code
 // against breaking changes to the language.
-version: 0.1-pre_mvp;
+version 0.1-pre_mvp;
 
 // Import some helper functions from our html companion library (see below), as well
 // as the library itself.
@@ -247,7 +247,7 @@ template element(tag: Str, attrs: Map<Str> = {}) using children {
   out "<${tag} ";
   
   // Append any attributes to the output.
-  for attr, value in attrs {
+  for (attr, value) in attrs {
     out " ${quote(attr)}=${quote(value)}";
   }
   

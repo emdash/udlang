@@ -1,5 +1,6 @@
 use std::collections::HashMap;
 use std::rc::Rc;
+use std::cell::RefCell;
 use std::ops::Deref;
 
 
@@ -204,6 +205,7 @@ pub enum TypeTag {
 #[derive(Clone, Debug, PartialEq)]
 pub enum Member {
     Field(TypeNode),
+    OptionField(TypeNode),
     Method(AList<TypeTag>, TypeNode, ExprNode),
     StaticValue(TypeNode, ExprNode),
     StaticMethod(AList<TypeTag>, TypeNode, ExprNode)
@@ -220,10 +222,13 @@ pub enum Expr {
     Str(String),
     Point(f64, f64),
     This, // the lowercase `self` keyword, but we can't call it that.
+    In, // The `in` keyword.
+    Partial, // The `$` placeholder.
     List(Seq<Expr>),
     Map(Map<Expr>),
     Id(String),
     Dot(ExprNode, String),
+    Has(ExprNode, String),
     Index(ExprNode, ExprNode),
     Cond(PairSeq<Expr>, ExprNode),
     Block(Seq<Statement>, ExprNode),
@@ -237,22 +242,66 @@ pub enum Expr {
 // ADT for effects and control-flow.
 #[derive(Clone, Debug, PartialEq)]
 pub enum Statement {
+    Import(Import),
+    Export(Export),
     ExprForEffect(ExprNode),
-    Emit(String, Seq<Expr>),
+    Emit(ExprNode),
     Def(String, ExprNode),
     TypeDef(String, TypeNode),
     ListIter(String, ExprNode, StmtNode),
     MapIter(String, String, ExprNode, StmtNode),
     While(ExprNode, StmtNode),
+    Suppose(ExprNode, StmtNode, StmtNode),
+    EffectCapture,
 }
 
 
-// The entire program.
+// Just extract the list of exports here.
 #[derive(Clone, Debug, PartialEq)]
-pub struct Program {
-    pub description: String,
-    pub params: HashMap<String, (TypeTag, String)>,
-    pub code: Seq<Statement>
+pub enum Export {
+    Name(String),
+    Decl(StmtNode)
+}
+
+
+// An import must either name an entire module or select specific
+// items from a module.
+#[derive(Clone, Debug, PartialEq)]
+pub struct Import {
+    root: String,
+    selection: Option<ImportSelector>
+}
+
+
+// These are the different ways to select items from a module.
+#[derive(Clone, Debug, PartialEq)]
+pub enum ImportSelector {
+    Itself,
+    All,
+    Item(String),
+    Alias(String, String),
+    Group(Vec<ImportSelector>),
+    Nested(String, Node<ImportSelector>)
+}
+
+
+// Represents a single source file.
+//
+// A file has to decide whether it is a script or a library. It cannot
+// be both.
+#[derive(Clone, Debug, PartialEq)]
+pub enum Program {
+    Script {
+	desc: String,
+	decls: Seq<Statement>,
+	input: TypeNode,
+	output: TypeNode,
+	body: Seq<Statement>
+    },
+    Library {
+	desc: String,
+	decls: Seq<Statement>,
+    }
 }
 
 
@@ -266,8 +315,10 @@ pub struct Program {
 // structure of the ADT.
 pub struct Builder {
     // Singleton values that can be used directly
-    pub void:  ExprNode,
-    pub this:  ExprNode,
+    pub void:    ExprNode,
+    pub this:    ExprNode,
+    pub in_:     ExprNode,
+    pub partial: ExprNode,
     pub t_void:  TypeNode,
     pub t_none:  TypeNode,
     pub t_bool:  TypeNode,
@@ -277,6 +328,8 @@ pub struct Builder {
     pub t_str:   TypeNode,
     pub t_any:   TypeNode,
     pub t_this:  TypeNode,
+    pub effect_capture: StmtNode,
+    pub exports: RefCell<Vec<Export>>,
     // TBD: hashtables to cache constants, strings, exprs, and
     // statements.
 }
@@ -303,6 +356,8 @@ impl Builder {
 	Self {
 	    void    : Node::new(Expr::Void),
 	    this    : Node::new(Expr::This),
+	    in_     : Node::new(Expr::In),
+	    partial : Node::new(Expr::Partial),
 	    t_void  : Node::new(TypeTag::Void),
 	    t_none  : Node::new(TypeTag::None),
 	    t_bool  : Node::new(TypeTag::Bool),
@@ -311,7 +366,9 @@ impl Builder {
 	    t_point : Node::new(TypeTag::Point),
 	    t_str   : Node::new(TypeTag::Str),
 	    t_any   : Node::new(TypeTag::Any),
-	    t_this  : Node::new(TypeTag::This)
+	    t_this  : Node::new(TypeTag::This),
+	    exports : RefCell::new(Vec::new()),
+	    effect_capture: Node::new(Statement::EffectCapture),
 	}
     }
 
@@ -391,6 +448,10 @@ impl Builder {
 	self.subexpr(Expr::Dot(lhs.clone(), field.to_string()))
     }
 
+    pub fn has(&self, lhs: ExprNode, field: &str) -> ExprNode {
+	self.subexpr(Expr::Has(lhs.clone(), field.to_string()))
+    }
+
     pub fn index(&self, lhs: ExprNode, rhs: ExprNode) -> ExprNode {
 	self.subexpr(Expr::Index(lhs.clone(), rhs))
     }
@@ -403,6 +464,15 @@ impl Builder {
     ) -> ExprNode {
 	let conds = conds.iter().cloned().collect();
 	self.subexpr(Expr::Cond(conds, else_))
+    }
+
+    pub fn suppose(
+	&self,
+	delegate: ExprNode,
+	branch: StmtNode,
+	leaf: StmtNode
+    ) -> StmtNode {
+	self.statement(Statement::Suppose(delegate, branch, leaf))
     }
 
     pub fn block(
@@ -508,6 +578,14 @@ impl Builder {
 	(name, Member::Field(t))
     }
 
+    pub fn opt_field<'a>(
+	&self,
+	name: &'a str,
+	t: TypeNode
+    ) -> (&'a str, Member) {
+	(name, Member::OptionField(t))
+    }
+
     pub fn method<'a, 'b>(
 	&self,
 	name: &'a str,
@@ -564,12 +642,8 @@ impl Builder {
 	}
     }
 
-    pub fn emit(&self, name: &str, exprs: &[ExprNode]) -> StmtNode {
-	let exprs = exprs
-	    .iter()
-	    .cloned()
-	    .collect();
-	self.statement(Statement::Emit(name.to_string(), exprs))
+    pub fn emit(&self, expr: ExprNode) -> StmtNode {
+	self.statement(Statement::Emit(expr))
     }
 
     pub fn def(&self, name: &str, expr: ExprNode) -> StmtNode {
@@ -625,5 +699,79 @@ impl Builder {
             map,
             body
 	))
+    }
+
+    // Export an identifier or type name.
+    pub fn export(&self, name: &str) -> StmtNode {
+	self.statement(Statement::Export(Export::Name(name.to_string())))
+    }
+    
+
+    // Wrap the underlying decl as an export.
+    pub fn export_decl(&self, decl: StmtNode) -> StmtNode {
+	match *decl {
+	    Statement::Def(_, _) => (),
+	    Statement::TypeDef(_, _) => (),
+	    _ => panic!("Unreachable.")
+	}
+	self.statement(Statement::Export(Export::Decl(decl)))
+    }
+
+    pub fn import(
+	&self,
+	root: &str,
+	selection: Option<ImportSelector>
+    ) -> StmtNode {
+	let root = root.to_string();
+	self.statement(Statement::Import(Import {root, selection}))
+    }
+
+    pub fn import_item(&self, name: &str) -> ImportSelector {
+	ImportSelector::Item(name.to_string())
+    }
+
+    pub fn import_alias(&self, name: &str, alias: &str) -> ImportSelector {
+	ImportSelector::Alias(name.to_string(), alias.to_string())
+    }
+
+    pub fn import_nested(
+	&self,
+	name: &str,
+	sel: ImportSelector
+    ) -> ImportSelector {
+	// XXX: This use of Node::new() is allowable for now.
+	ImportSelector::Nested(name.to_string(), Node::new(sel))
+    }
+
+    pub fn import_group(&self, items: &[ImportSelector]) -> ImportSelector {
+	ImportSelector::Group(items.to_vec())
+    }
+
+    pub fn script(
+	&self,
+	desc: &str,
+	decls: &[StmtNode],
+	input: TypeNode,
+	output:TypeNode,
+	body: &[StmtNode]
+    ) -> Program {
+	Program::Script {
+	    desc: desc.to_string(),
+	    decls: decls.to_vec(),
+	    input,
+	    output,
+	    body: body.to_vec()
+	}
+    }
+
+    pub fn library(
+	&self,
+	desc: &str,
+	decls: &[StmtNode]
+    ) -> Program {
+	Program::Library {
+	    desc: desc.to_string(),
+	    decls: decls.to_vec(),
+	}
     }
 }

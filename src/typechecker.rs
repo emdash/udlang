@@ -72,6 +72,7 @@ impl TypeChecker {
 	if let Some(member) = members.iter().find(|m| m.0 == *name) {
 	    match &*member.1 {
 		Member::Field(tt) => Ok(tt.clone()),
+		Member::OptionField(tt) => Ok(tt.clone()),
 		Member::Method(args, ret, body) => self.eval_lambda(args, ret, body),
 		Member::StaticValue(t, _) => Ok(t.clone()),
 		Member::StaticMethod(args, ret, body) => self.eval_lambda(args, ret, body)
@@ -90,10 +91,13 @@ impl TypeChecker {
             Expr::Str(_)             => Ok(Node::new(TypeTag::Str)),
             Expr::Point(_, _)        => Ok(Node::new(TypeTag::Point)),
 	    Expr::This               => self.eval_this(),
+	    Expr::In                 => self.eval_in(),
+	    Expr::Partial            => Err(TypeError::NotImplemented),
             Expr::List(items)        => self.eval_list(items),
             Expr::Map(items)         => self.eval_map(items),
             Expr::Id(name)           => self.eval_id(name),
             Expr::Dot(obj, key)      => self.eval_dot(obj, key),
+	    Expr::Has(_, _)          => Ok(Node::new(TypeTag::Bool)),
             Expr::Index(lst, i)      => self.eval_index(lst, i),
             Expr::Cond(cases, def)   => self.eval_cond(cases, def),
             Expr::Block(stmts, ret)  => self.eval_block(stmts, ret),
@@ -105,6 +109,10 @@ impl TypeChecker {
     }
 
     pub fn eval_this(&self) -> TypeExpr {
+	Err(TypeError::NotImplemented)
+    }
+
+    pub fn eval_in(&self) -> TypeExpr {
 	Err(TypeError::NotImplemented)
     }
 
@@ -326,14 +334,21 @@ impl TypeChecker {
 	// succeeds, depedning on the type of statement, we check it
 	// against what we expect.
         match stmt.deref() {
+	    Statement::Import(_) => Err(TypeError::NotImplemented)?,
+	    Statement::Export(exp) => match exp {
+		Export::Decl(decl) => self.check_statement(decl),
+		Export::Name(_) => Err(TypeError::NotImplemented)?
+	    }?,
+
+	    Statement::Suppose(_, _, _) => Err(TypeError::NotImplemented)?,
+	    Statement::EffectCapture => Err(TypeError::NotImplemented)?,
+		
             Statement::ExprForEffect(body) => {
                 self.is_void(body)?;
             },
-            Statement::Emit(_op, exprs) => {
-                for expr in exprs {
-                    self.eval_expr(expr)?;
-                }
-            },
+            Statement::Emit(_expr) =>
+   	        /* XXX: expr must resolve to the declared output type */
+		Err(TypeError::NotImplemented)?,
             Statement::Def(name, val) => {
                 self.types.define(name, &self.eval_expr(val)?);
             },
@@ -377,9 +392,22 @@ impl TypeChecker {
     // Ok(()).  Eventually, this should return some useful summary of
     // the type information we collected to be used for code-gen.
     pub fn check_program(&self, prog: Program) -> TypeCheck {
-        for stmt in prog.code {
-            self.check_statement(&stmt)?;
-        }
+	match prog {
+	    Program::Script { desc: _, decls, input: _, output: _, body } => {
+		for statement in decls {
+		    self.check_statement(&statement)?;
+		}
+		for statement in body {
+		    self.check_statement(&statement)?;
+		}
+	    },
+	    Program::Library { desc: _, decls } => {
+		for statement in decls {
+		    self.check_statement(&statement)?;
+		}
+	    }
+	    
+	};
         Ok(())
     }
 }
@@ -538,10 +566,10 @@ mod tests {
         let statement = Node::new(ast.list_iter(
             "i",
             ast.id("x"),
-            ast.emit("show_text", &[ast.id("i")])
+            ast.emit(ast.list(&[ast.s("show_text"), ast.id("i")]))
         ));
 
-        assert_eq!(tc.check_statement(&statement), Ok(()));
+        assert_eq!(tc.check_statement(&statement), Err(NotImplemented));
 
         let statement = Node::new(ast.list_iter(
             "i",
@@ -569,10 +597,10 @@ mod tests {
             "k",
             "v",
             ast.id("x"),
-            ast.emit("show_text", &[ast.id("v")])
+            ast.emit(ast.list(&[ast.s("show_text"), ast.id("v")]))
         ));
 
-        assert_eq!(tc.check_statement(&statement), Ok(()));
+        assert_eq!(tc.check_statement(&statement), Err(NotImplemented));
 
         let statement = Node::new(ast.map_iter(
             "k",
