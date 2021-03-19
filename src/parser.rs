@@ -688,6 +688,22 @@ mod tests {
             ast.lambda(&[], ast.t_void.clone(), ast.map(&[]))
         );
 
+	let ast = Builder::new();
+        assert_expr(
+            "() {{}}",
+            ast.lambda(&[], ast.t_void.clone(), ast.map(&[]))
+        );
+
+        assert_expr(
+            "() {done}",
+            ast.lambda(&[], ast.t_void.clone(), ast.void.clone())
+        );
+
+	assert_expr(
+            "() {4}",
+            ast.lambda(&[], ast.t_void.clone(), ast.i(4))
+        );
+
         assert_expr(
             "() = 4",
             ast.lambda(&[], ast.t_void.clone(), ast.i(4))
@@ -700,7 +716,7 @@ mod tests {
         );
 
         assert_expr(
-            "() = {let x = 4; yield x}",
+            "() {let x = 4; x}",
             ast.lambda(
 		&[],
                 ast.t_void.clone(),
@@ -849,13 +865,13 @@ mod tests {
                field x: Float;
                field y: Float;
 
-               method dist(other: Self) -> Float = {
+               method dist(other: Self) -> Float {
                   let dx = self.x - other.x;
                   let dy = self.y - other.y;
-                  yield sqrt(dx * dx + dy * dy)
+                  sqrt(dx * dx + dy * dy)
                };
 
-               static fromPolar(r: Float, theta: Float) -> Self = {
+               static fromPolar(r: Float, theta: Float) -> Self {
                   x: r * cos(theta),
                   y: r * sin(theta),
                };
