@@ -417,10 +417,8 @@ impl TypeChecker {
 mod tests {
     use super::*;
     #[allow(unused_imports)]
-    #[macro_use]
     use crate::ast;
     #[allow(unused_imports)]
-    #[macro_use]
     use crate::ast::*;
 
     // Assert that expr evaluated in env has type t.

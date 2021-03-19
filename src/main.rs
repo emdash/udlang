@@ -1,10 +1,9 @@
 use std::env;
 use std::fs;
-use std::io;
 
 use udlang::grammar;
 use udlang::ast::{self, Builder};
-use udlang::ir::{self, Compiler};
+use udlang::ir::Compiler;
 
 use std::io::{
     BufReader,
@@ -57,9 +56,9 @@ fn main() {
     let strargs: Vec<&str> = args.iter().map(|i| i.as_str()).collect();
     
     match strargs.as_slice() {
-	[_, ("--dump-expr")] => dump_expr(),
-	[_, ("--dump-ast"), path] => dump_ast(path),
-	[_, ("--compile"), path] => dump_ir(path),
+	[_, "--dump-expr"] => dump_expr(),
+	[_, "--dump-ast", path] => dump_ast(path),
+	[_, "--compile", path] => dump_ir(path),
 	_ => println!("Invalid args. Usage string TBD.")
     };
 }
