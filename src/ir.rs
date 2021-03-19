@@ -1,6 +1,5 @@
 use crate::ast::{
     self,
-    Node,
     BinOp,
     UnOp, Seq,
     StmtNode,
@@ -9,6 +8,8 @@ use crate::ast::{
     Statement,
     Program,
 };
+
+use crate::parser;
 
 use std::collections::hash_map::{HashMap, Entry};
 use std::ops::Deref;
@@ -267,10 +268,12 @@ type Block = Vec<Instruction>;
 
 #[derive(Clone, Debug, PartialEq, Eq, Hash)]
 pub enum Value {
-    Int(u64),
+    Bool(bool),
+    Int(i64),
     Float(Float),
     Str(String),
     Type(Boxed<TypeTag>),
+    Point(Float, Float),
     Lambda {
 	code: Block,
 	args: u8,
@@ -311,8 +314,8 @@ pub enum IR {
 #[derive(Clone, Debug, PartialEq)]
 pub struct Executable {
     pub desc: String,
-    pub input: ast::TypeTag,
-    pub output: ast::TypeTag,
+    pub input: TypeNode,
+    pub output: TypeNode,
     pub data: Vec<Value>,
     pub code: Vec<Block>,
 }
@@ -339,7 +342,7 @@ pub enum Binding {
 // Holds state required to process an AST into IR.
 pub struct Compiler {
     data: BiVec<Value>,
-    output: Vec<Instruction>,
+    blocks: Vec<Block>,
     scopes: ScopeChain<Binding>,
     // TBD: scope chain / stack
     // TBD: modules.
@@ -353,7 +356,7 @@ impl Compiler {
     pub fn new() -> Self {
 	Self {
 	    data: BiVec::new(),
-	    output: Vec::new(),
+	    blocks: Vec::new(),
 	    scopes: ScopeChain::new(),
 	}
     }
@@ -380,10 +383,12 @@ impl Compiler {
     ) -> Result<Executable> {
 	self.scopes.push()?;
 
+	self.blocks.push(Block::new());
 	for d in decls {
 	    self.compile_statement(&d)?;
 	}
 
+	self.blocks.push(Block::new());
 	for statement in body {
 	    self.compile_statement(&statement)?;
 	}
@@ -392,10 +397,10 @@ impl Compiler {
 
 	Ok(Executable {
 	    desc,
-	    input: Node::try_unwrap(input).unwrap(),
-	    output: Node::try_unwrap(output).unwrap(),
+	    input: input,
+	    output: output,
 	    data: self.data.to_vec(),
-	    code: vec![self.output.clone()]
+	    code: self.blocks.clone()
 	})
     }
 
@@ -420,18 +425,22 @@ impl Compiler {
 
     // Dispatch to each instruction variant
     pub fn compile_statement(&mut self, statement: &StmtNode) -> Result<()> {
+	use ast::Statement::*;
+
+	// Do NOT include a wildcard match in this block, it breaks
+	// exhaustivity analysis.
 	match statement.deref() {
-	    Statement::Import(_)           => Error::not_implemented("module imports")?,
-	    Statement::Export(_)           => Error::not_implemented("module exports")?,
-	    Statement::ExprForEffect(expr) => self.compile_expr(expr)?,
-	    Statement::Emit(expr)          => self.compile_emit(expr)?,
-	    Statement::Def(id, val)        => self.compile_def(id, val)?,
-	    Statement::TypeDef(id, t)      => self.compile_typedef(id, t)?,
-	    Statement::ListIter(_, _, _)   => Error::not_implemented("list iteration")?,
-	    Statement::MapIter(_, _, _, _) => Error::not_implemented("map iteration")?,
-	    Statement::While(_, _)         => Error::not_implemented("while loops")?,
-	    Statement::Suppose(_, _, _)    => Error::not_implemented("subjunctives")?,
-	    Statement::EffectCapture       => Error::not_implemented("effect captures")?
+	   Import(_)           => Error::not_implemented("module imports")?,
+	   Export(_)           => Error::not_implemented("module exports")?,
+	   ExprForEffect(expr) => self.compile_expr(expr)?,
+	   Emit(expr)          => self.compile_emit(expr)?,
+	   Def(id, val)        => self.compile_def(id, val)?,
+	   TypeDef(id, t)      => self.compile_typedef(id, t)?,
+	   ListIter(_, _, _)   => Error::not_implemented("list iteration")?,
+	   MapIter(_, _, _, _) => Error::not_implemented("map iteration")?,
+	   While(_, _)         => Error::not_implemented("while loops")?,
+	   Suppose(_, _, _)    => Error::not_implemented("subjunctives")?,
+	   EffectCapture       => Error::not_implemented("effect captures")?
 	};
 
 	Ok(())
@@ -439,8 +448,7 @@ impl Compiler {
 
     pub fn compile_emit(&mut self, expr: &ExprNode) -> Result<()> {
 	self.compile_expr(expr)?;
-	self.emit(Instruction::Out);
-	Ok(())
+	self.emit(Instruction::Out)
     }
 
     pub fn compile_def(&mut self, id: &str, expr: &ExprNode) -> Result<()> {
@@ -451,10 +459,52 @@ impl Compiler {
 	Error::not_implemented("local typedefs")
     }
 
-    // Try to compile a block to instructions.
+    // Dispatch to each expression variant.
+    pub fn compile_expr(&mut self, expr: &ExprNode) -> Result<()> {
+	use ast::Expr::*;
+
+	// Do NOT include a wildcard match in this block, it breaks
+	// exhaustivity analysis.
+	match expr.deref() {
+	    Void                    => Ok(()),
+	    Bool(b)                 => self.compile_const(Value::Bool(*b)),
+	    Int(i)                  => self.compile_const(Value::Int(*i)),
+	    Float(f)                => self.compile_const(Value::Float(*f)),
+	    Str(s)                  => self.compile_const(Value::Str(s.clone())),
+	    Point(x, y)             => self.compile_const(Value::Point(*x, *y)),
+	    This                    => Error::not_implemented("self"),
+	    In                      => self.emit(Instruction::In),
+	    Partial                 => self.emit(Instruction::Placeholder),
+	    List(_)                 => Error::not_implemented("list literal"),
+	    Map(_)                  => Error::not_implemented("map literal"),
+	    Id(_)                   => Error::not_implemented("variable lookup"),
+	    Dot(_, _)               => Error::not_implemented("fixed index"),
+	    Has(_, _)               => Error::not_implemented("member test"),
+	    Index(_, _)             => Error::not_implemented("computed index"),
+	    Cond(_, _)              => Error::not_implemented("conditional"),
+	    Block(stmts, ret)       => self.compile_block(stmts, ret),
+	    BinOp(op, l, r)         => self.compile_bin(*op, l, r),
+	    UnOp(op, operand)       => self.compile_un(*op, operand),
+	    Call(func, args)        => self.compile_call(func, args),
+	    Lambda(args, ret, body) => Error::not_implemented("lambda expressions")
+	}?;
+
+	Ok(())
+    }
+
+    // A constant value will be replaced with a Const instruction in
+    // the output.
     //
-    // The instructions will be placed in the output block.
-    pub fn compile_block(&mut self, stmts: &[StmtNode], ret: ExprNode) -> Result<()> {
+    // We need to look up the value in our table to get its index. If
+    // this value has already been seen, it will be re-used.
+    pub fn compile_const(&mut self, val: Value) -> Result<()> {
+	// XXX: handle address overflow.
+	let addr = self.data.push(val) as u16;
+	self.emit(Instruction::Const(addr))
+    }
+
+    // Iterate over the statements in a block, and compile each.
+    pub fn compile_block(&mut self, stmts: &[StmtNode], ret: &ExprNode) -> Result<()> {
 	self.scopes.push()?;
 
 	for statement in stmts {
@@ -467,28 +517,43 @@ impl Compiler {
 	Ok(())
     }
 
-    // Try to compile an expression to instructions.
-    //
-    // The instructions will be placed in the output block.
-    pub fn compile_expr(&mut self, expr: &ExprNode) -> Result<()> {
-	Error::not_implemented("Expressions")
+    // Try to compile a binary operator
+    pub fn compile_bin(&mut self, op: BinOp, l: &ExprNode, r: &ExprNode) -> Result<()> {
+	self.compile_expr(l)?;
+	self.compile_expr(r)?;
+	self.emit(Instruction::Bin(op))
     }
 
-    // A constant value will be replaced with a Const instruction in
-    // the output.
+    // Try to compile a unary operator
+    pub fn compile_un(&mut self, op: UnOp, operand: &ExprNode) -> Result<()> {
+	self.compile_expr(operand)?;
+	self.emit(Instruction::Un(op))
+    }
+
+    // Try to compile a function call
     //
-    // We need to look up the value in our table to get its index. If
-    // this value has already been seen, it will be re-used.
-    pub fn compile_const(&mut self, val: Value) -> Result<()> {
-	// XXX: handle address overflow.
-	let addr = self.data.push(val) as u16;
-	self.emit(Instruction::Const(addr));
-	Ok(())
+    // Args are placed on the stack in order.
+    //
+    // foo(1, 2, 3) => [1 2 3 <foo> call]
+    //
+    // Inside the call of foo, arg(0) is 1.
+    pub fn compile_call(&mut self, func: &ExprNode, args: &[ExprNode]) -> Result<()> {
+	self.compile_expr(func)?;
+	for arg in args {
+	    self.compile_expr(arg)?;
+	}
+	self.emit(Instruction::Call(CallType::Always))
     }
 
     // Emit an instruction to the output.
-    pub fn emit(&mut self, inst: Instruction) {
-	self.output.push(inst)
+    //
+    // Since this is a post-order notation, it is convenient for this
+    // function to return Ok(()), since most compile_* functions will
+    // end with this call.
+    pub fn emit(&mut self, inst: Instruction) -> Result<()>{
+	let top = self.blocks.len() - 1;
+	self.blocks[top].push(inst);
+	Ok(())
     }
 }
 
@@ -530,9 +595,37 @@ impl Instruction {
 }
 
 
+// Compile the given path to IR
+pub fn compile(path: &str) -> IR {
+    let mut compiler = Compiler::new();
+    compiler.compile_program(parser::parse(path)).expect("Compilation Error")
+}
+
+
 #[cfg(test)]
 mod tests {
+    use super::*;
+    use std::fs;
+
+    fn assert_file(path: &str, expected: IR) {
+	assert_eq!(compile(path), expected)
+    }
+    
     #[test]
-    pub fn test_simple() {
+    pub fn test_hello() {
+	let ast = ast::Builder::new();
+	use Instruction::*;
+	use BinOp::*;
+	
+	assert_file(
+	    "examples/hello.us",
+	    IR::Executable(Executable {
+		desc: "Hello world, in uDLang".to_string(),
+		input: ast.t_str.clone(),
+		output: ast.t_str.clone(),
+		data: vec![Value::Str("Hello, ".to_string())],
+		code: vec![vec![], vec![Const(0), In, Bin(Add), Out]]
+	    })
+	);
     }
 }
