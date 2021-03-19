@@ -11,6 +11,7 @@ use crate::ast::{
 };
 
 use std::collections::hash_map::{HashMap, Entry};
+use std::ops::Deref;
 use std::hash::Hash;
 use std::fmt::Debug;
 
@@ -417,11 +418,37 @@ impl Compiler {
 	Error::not_implemented("Libraries")
     }
 
-    // Try to compile a statement to instructions.
-    //
-    // The instructions will be placed in the output block.
+    // Dispatch to each instruction variant
     pub fn compile_statement(&mut self, statement: &StmtNode) -> Result<()> {
-	Error::not_implemented("Anything at all")
+	match statement.deref() {
+	    Statement::Import(_)           => Error::not_implemented("module imports")?,
+	    Statement::Export(_)           => Error::not_implemented("module exports")?,
+	    Statement::ExprForEffect(expr) => self.compile_expr(expr)?,
+	    Statement::Emit(expr)          => self.compile_emit(expr)?,
+	    Statement::Def(id, val)        => self.compile_def(id, val)?,
+	    Statement::TypeDef(id, t)      => self.compile_typedef(id, t)?,
+	    Statement::ListIter(_, _, _)   => Error::not_implemented("list iteration")?,
+	    Statement::MapIter(_, _, _, _) => Error::not_implemented("map iteration")?,
+	    Statement::While(_, _)         => Error::not_implemented("while loops")?,
+	    Statement::Suppose(_, _, _)    => Error::not_implemented("subjunctives")?,
+	    Statement::EffectCapture       => Error::not_implemented("effect captures")?
+	};
+
+	Ok(())
+    }
+
+    pub fn compile_emit(&mut self, expr: &ExprNode) -> Result<()> {
+	self.compile_expr(expr)?;
+	self.emit(Instruction::Out);
+	Ok(())
+    }
+
+    pub fn compile_def(&mut self, id: &str, expr: &ExprNode) -> Result<()> {
+	Error::not_implemented("local bindings")
+    }
+
+    pub fn compile_typedef(&mut self, id: &str, expr: &TypeNode) -> Result<()> {
+	Error::not_implemented("local typedefs")
     }
 
     // Try to compile a block to instructions.
