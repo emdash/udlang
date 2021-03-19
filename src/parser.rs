@@ -431,7 +431,7 @@ mod tests {
     }
 
     #[test]
-    fn test_expr_block() {
+    fn test_block_expr() {
 	let ast = Builder::new();
         assert_expr("{let x = y; 4}", ast.block(
             &[ast.def("x", ast.id("y"))],
@@ -448,13 +448,8 @@ mod tests {
             ast.id("x")
         ));
 
-	assert_expr("{out debug(x); done}", ast.block(
-            &[ast.emit(ast.call(ast.id("debug"), &[ast.id("x")]))],
-            ast.void.clone()
-        ));
-
         assert_expr(
-            "{let x = {let y = 2;  y * 3}; x}",
+            "{let x = {let y = 2; y * 3}; x}",
             ast.block(
 		&[
                     ast.def("x",
@@ -470,13 +465,47 @@ mod tests {
     }
 
     #[test]
-    fn test_list_iter() {
+    fn test_block_stmt() {
+	let ast = Builder::new();
+        assert_statement("{let x = y;}", ast.expr_for_effect(ast.block(
+            &[ast.def("x", ast.id("y"))],
+            ast.void.clone()
+	)));
+
+        assert_statement("{let x = frob(y);}", ast.expr_for_effect(ast.block(
+            &[ast.def("x", ast.call(ast.id("frob"), &[ast.id("y")]))],
+	    ast.void.clone()
+        )));
+
+        assert_statement(
+	    "{out debug(x);}",
+	    ast.emit(ast.call(ast.id("debug"), &[ast.id("x")]))
+	);
+
+        assert_statement(
+            "{let x = {let y = 2; y * 3}; out x;}",
+            ast.expr_for_effect(ast.block(
+		&[
+                    ast.def("x",
+			    ast.block(
+				&[ast.def("y", ast.i(2))], 
+				ast.bin(Mul, ast.id("y"), ast.i(3))
+			    )
+                    ),
+		    ast.emit(ast.id("x"))
+		],
+		ast.void.clone()
+	    ))
+	);
+    }
+
+    #[test]
+    fn test_list_iter_stmt() {
 	let ast = Builder::new();
         let test = r#"
               for p in points {
                   out ["moveto", p];
                   out ["circle", 50.0];
-                  done
               }
         "#;
 
@@ -497,13 +526,12 @@ mod tests {
 
 
     #[test]
-    fn test_map_iter() {
+    fn test_map_iter_stmt() {
 	let ast = Builder::new();
         let test = r#"
               for (k, p) in x {
                   out ["moveto", [p.x, p.y]];
                   out ["text", k];
-                  done
               }
         "#;
 
@@ -530,7 +558,7 @@ mod tests {
     fn test_if() {
 	let ast = Builder::new();
         assert_statement(
-            "if (a) { out [\"text\", b]; done}",
+            "if (a) { out [\"text\", b]; }",
             ast.guard(
                 &[(ast.id("a"),
 		   ast.block(
@@ -547,7 +575,7 @@ mod tests {
     fn test_if_else() {
 	let ast = Builder::new();
         assert_statement(
-            r#"if (a) { out a; done} else { out "error"; done}"#,
+            r#"if (a) { out a; } else { out "error"; }"#,
             ast.guard(
                 &[(ast.id("a"),
 		   ast.block(
@@ -565,11 +593,11 @@ mod tests {
 	let ast = Builder::new();
         assert_statement(
             r#"if (a) {
-               out "a"; done
+               out "a";
             } elif (b) {
-               out "b"; done
+               out "b";
             } else {
-               out "error"; done
+               out "error";
             }"#,
             ast.guard(
                 &[
@@ -582,13 +610,13 @@ mod tests {
 
         assert_statement(
             r#"if (a) {
-               out "a"; done
+               out "a";
             } elif (b) {
-               out "b"; done
+               out "b";
             } elif (c) {
-               out "c"; done
+               out "c";
             } else {
-               out "error"; done
+               out "error";
             }"#,
             ast.guard(
                 &[
@@ -606,9 +634,9 @@ mod tests {
 	let ast = Builder::new();
         assert_statement(
             r#"if (a) {
-               out "a"; done
+               out "a";
             } elif (b) {
-               out "b"; done
+               out "b";
             }"#,
             ast.guard(
                 &[
@@ -621,11 +649,11 @@ mod tests {
 
         assert_statement(
             r#"if (a) {
-               out "a"; done
+               out "a";
             } elif (b) {
-               out "b"; done
+               out "b";
             } elif (c) {
-               out "c"; done
+               out "c";
             }"#,
             ast.guard(
                 &[
@@ -639,14 +667,14 @@ mod tests {
     }
 
     #[test]
-    fn test_tree_expr() {
+    fn test_template_call() {
 	let ast = Builder::new();
         assert_statement("foo();", ast.expr_for_effect(
             ast.call(ast.id("foo"), &[])
         ));
 
         assert_statement(
-            "foo() { out \"paint\"; done}",
+            "foo() { out \"paint\";}",
             ast.template_call(ast.id("foo"), &[], ast.block(
 		&[ast.emit(ast.s("paint"))],
 		ast.void.clone()
@@ -659,10 +687,8 @@ mod tests {
                 bar(y, z) {
                    gronk();
                    frobulate();
-                   done
                 }
                 frobulate();
-                done
             }
             "#,
             ast.template_call(
@@ -694,28 +720,35 @@ mod tests {
 	let ast = Builder::new();
         assert_expr(
             "() = {}",
-            ast.lambda(&[], ast.t_void.clone(), ast.map(&[]))
+            ast.lambda(&[], ast.t_any.clone(), ast.map(&[]))
         );
 
 	let ast = Builder::new();
         assert_expr(
-            "() {{}}",
-            ast.lambda(&[], ast.t_void.clone(), ast.map(&[]))
+            "() -> {Any} {{}}",
+            ast.lambda(&[], ast.t_map(ast.t_any.clone()), ast.map(&[]))
         );
 
         assert_expr(
-            "() {done}",
+            "() {}",
             ast.lambda(&[], ast.t_void.clone(), ast.void.clone())
         );
 
 	assert_expr(
-            "() {4}",
-            ast.lambda(&[], ast.t_void.clone(), ast.i(4))
+            "() -> Int {4}",
+            ast.lambda(&[], ast.t_int.clone(), ast.i(4))
         );
+
+	
+	assert_expr(
+            "() -> Void {done}",
+            ast.lambda(&[], ast.t_void.clone(), ast.void.clone())
+        );
+
 
         assert_expr(
             "() = 4",
-            ast.lambda(&[], ast.t_void.clone(), ast.i(4))
+            ast.lambda(&[], ast.t_any.clone(), ast.i(4))
         );
 
 
@@ -725,10 +758,10 @@ mod tests {
         );
 
         assert_expr(
-            "() {let x = 4; x}",
+            "() -> Int {let x = 4; x}",
             ast.lambda(
 		&[],
-                ast.t_void.clone(),
+                ast.t_int.clone(),
                 ast.block(
                     &[ast.def("x", ast.i(4))],
                     ast.id("x")
@@ -770,7 +803,7 @@ mod tests {
 
 	assert_statement(
 	    r#"
-            for i in in { out i; done}
+            for i in in { out i; }
             "#,
 	    ast.list_iter(
 		"i",
@@ -783,7 +816,7 @@ mod tests {
 
 	assert_statement(
 	    r#"
-            for i in in.items { out i; done}
+            for i in in.items { out i; }
             "#,
 	    ast.list_iter(
 		"i",
@@ -1019,7 +1052,7 @@ mod tests {
 
         assert_statement(
             r#"proc foo(y: Int) {
-               out "paint"; done
+               out "paint";
             }"#,
             ast.def(
                 "foo",
@@ -1255,10 +1288,8 @@ mod tests {
                ...;
                ...;
                ...;
-               done
             } else {
                out "Yesterdayyyyyy.....";
-               done
             }
             "#,
 	    ast.suppose(
