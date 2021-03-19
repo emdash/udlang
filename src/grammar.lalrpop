@@ -151,11 +151,11 @@ pub Member: (&'input str, ast::Member) = {
 	=> ast.field(name, t),
     "field?" <name:Id> ":" <t:Type>
 	=> ast.opt_field(name, t),
-    "method" <name:Id> <args:Arglist> "->" <ret:Type> "=" <body:Expr>
+    "method" <name:Id> <args:Arglist> "->" <ret:Type> <body:Expr>
 	=> ast.method(name, &args, ret, body),
     "const" <name:Id> ":" <t:Type> "=" <value:Expr>
 	=> ast.static_val(name, t, value),
-    "static" <name:Id> <args:Arglist> "->" <ret:Type> "=" <body:Expr>
+    "static" <name:Id> <args:Arglist> "->" <ret:Type> <body:Expr>
 	=> ast.static_method(name, &args, ret, body),
 }
 
@@ -311,13 +311,21 @@ Arglist: Vec<(&'input str, TypeNode)>
 
 
 // An anonymous function expression.
-Lambda: ExprNode
-    = <args:Arglist> <ret:("->" <Type>)?> "=" <body:Expr>
-    => ast.lambda(
-	&args,
-	ret.unwrap_or(ast.t_void.clone()),
-	body
-    );
+Lambda: ExprNode = {
+    <args:Arglist> <ret:("->" <Type>)?> "=" <body:SimpleExpr>
+	=> ast.lambda(
+	    &args,
+	    ret.unwrap_or(ast.t_void.clone()),
+	    body
+	),
+    <args:Arglist> <ret:("->" <Type>)?> <body:Block>
+	=> ast.lambda(
+	    &args,
+	    ret.unwrap_or(ast.t_void.clone()),
+	    body
+	),
+}
+    
 
 
 // A sequence of statements treated as an expression.
