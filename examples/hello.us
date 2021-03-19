@@ -1,0 +1,9 @@
+#! udlang
+
+version 0.1-pre_mvp;
+script "Hello world, in uDLang";
+
+input  Str;
+output Str;
+
+out "Hello, " + in;
