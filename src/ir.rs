@@ -3,17 +3,14 @@ use crate::ast::{
     Node,
     BinOp,
     UnOp, Seq,
-    AList,
     StmtNode,
     ExprNode,
     TypeNode,
     Statement,
     Program,
-    Expr
 };
 
 use std::collections::hash_map::{HashMap, Entry};
-use std::ops::Deref;
 use std::hash::Hash;
 use std::fmt::Debug;
 
@@ -380,7 +377,7 @@ impl Compiler {
 	output: TypeNode,
 	body: Seq<Statement>
     ) -> Result<Executable> {
-	self.scopes.push();
+	self.scopes.push()?;
 
 	for d in decls {
 	    self.compile_statement(&d)?;
@@ -407,7 +404,7 @@ impl Compiler {
 	desc: String,
 	decls: Vec<StmtNode>
     ) -> Result<Module> {
-	self.scopes.push();
+	self.scopes.push()?;
 
 	for d in decls {
 	    self.compile_statement(&d)?;
@@ -431,7 +428,7 @@ impl Compiler {
     //
     // The instructions will be placed in the output block.
     pub fn compile_block(&mut self, stmts: &[StmtNode], ret: ExprNode) -> Result<()> {
-	self.scopes.push();
+	self.scopes.push()?;
 
 	for statement in stmts {
 	    self.compile_statement(statement)?;
@@ -483,7 +480,7 @@ impl Instruction {
 	    Instruction::Out           => Ok((1, 0)),
 	    Instruction::Debug         => Ok((0, 0)),
 	    Instruction::Drop(n)       => Ok((n, 0)),
-	    Instruction::Swap(x, y)    => Ok((0, 0)),
+	    Instruction::Swap(_, _)    => Ok((0, 0)),
 	    Instruction::Dup(n)        => Ok((0, n)),
 	    Instruction::Placeholder   => Ok((0, 1)),
 	    Instruction::Index(_)      => Ok((2, 1)),
@@ -508,10 +505,6 @@ impl Instruction {
 
 #[cfg(test)]
 mod tests {
-    use crate::grammar;
-    use crate::ast::*;
-    use super::*;
-
     #[test]
     pub fn test_simple() {
     }
