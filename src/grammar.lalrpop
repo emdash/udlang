@@ -80,16 +80,18 @@ pub Statement: StmtNode = {
     TypeDef,
     Effect,
     Let,
-    EffectExpr,
+    CondStmt,
     Iteration,
     EffectCapture,
-    Suppose
+    TemplateCall,
+    NonEmptyBlockStmt => ast.expr_for_effect(<>),
+    Suppose,
 }
 
 
 // Expression entry point.
 pub Expr: ExprNode = {
-    Block,
+    BlockExpr,
     SimpleExpr,
 }
 
@@ -131,8 +133,10 @@ pub TypeTerm: TypeNode = {
     "Str"                       => ast.t_str.clone(),
     "Point"                     => ast.t_point.clone(),
     "Self"                      => ast.t_this.clone(),
+    "Any"                       => ast.t_any.clone(),
     <TypeName>                  => ast.type_name(<>),
     <Record>                    => <>,
+    "{" <Type> "}"              => ast.t_map(<>),
     "(" <Type> ")"              => <>,
     "<" <items:Comma<Type>> ">" => ast.tuple(&items),
     "[" <item:Type> "]"         => ast.t_list(item)
@@ -190,13 +194,13 @@ ImportSelector: ast::ImportSelector = {
 
 // Syntactic sugar for defining a function returning a value.
 FuncDef: StmtNode
-    = "func" <name:Id> <args:Arglist> "->" <ret:Type> <body:Block>
+    = "func" <name:Id> <args:Arglist> "->" <ret:Type> <body:BlockExpr>
     => ast.def(name, ast.lambda(&args, ret, body));
 
 
 // Syntatic sugar for defining a function which returns no value.
 ProcDef: StmtNode
-    = "proc" <name:Id> <args:Arglist> <body:Block>
+    = "proc" <name:Id> <args:Arglist> <body:BlockStmt>
     => ast.def(name, ast.lambda(&args, ast.t_void.clone(), body));
 
 
@@ -218,7 +222,7 @@ OutputDecl: TypeNode
 // consumes a trailing block. This allows defining library functions
 // which feel like control structures.
 TemplateDef: StmtNode
-    = "template" <name:Id> <args:Arglist> "using" <delegate:Id> <body:Block>
+    = "template" <name:Id> <args:Arglist> "using" <delegate:Id> <body:BlockStmt>
     => ast.def(name, ast.template(&args, delegate, body));
 
 
@@ -240,22 +244,57 @@ Let: StmtNode
     => ast.def(name, value);
 
 
-// An expression evaluated for its side effects in a statement context.
-//
-// To keep the LALRPOP happy, this is a subset of expressions.
-EffectExpr: StmtNode = {
-    <Cond> => ast.expr_for_effect(<>),
-    TemplateCall,
-}
+// An if-else chain in a statement context
+CondStmt: StmtNode
+    = "if"
+      <first:CondStmtClause>
+      <rest:("elif" <CondStmtClause>)*>
+      <default:("else" <BlockStmt>)?>
+    => {
+        let mut clauses = vec!{first};
+        clauses.extend(rest);
+        ast.expr_for_effect(
+	    ast.cond(clauses.as_slice(),
+		     default.unwrap_or(ast.void.clone())
+	    )
+	)
+    }
+;
+
+
+// A single clause in an if-else statement.
+CondStmtClause: (ExprNode, ExprNode)
+    = "(" <pred: Expr> ")" <body: BlockStmt>
+    => (pred, body);
 
 
 // Iterate over a collection.
 Iteration: StmtNode = {
-    "for" <name:Id> "in" <list:Expr> <body:Block>
+    "for" <name:Id> "in" <list:Expr> <body:BlockStmt>
 	=> ast.list_iter(name, list, ast.expr_for_effect(body)),
-    "for" "(" <key:Id> "," <value:Id> ")" "in" <map:Expr> <body:Block>
+    "for" "(" <key:Id> "," <value:Id> ")" "in" <map:Expr> <body:BlockStmt>
 	=> ast.map_iter(key, value, map, ast.expr_for_effect(body))
 }
+
+
+// A sequence of statements with nested scope.
+//
+// Unlike BlockExpr, this does *not* allow a trailing expression.  We
+// still return ExprNode here because the distinction is entirely
+// syntactic.
+BlockStmt: ExprNode = {
+    "{" <Statement+> "}" => ast.block(&<>, ast.void.clone()),
+    "{" "}" => ast.void.clone()
+}
+
+
+// A sequence of statements with nested scope.
+//
+// Unlike BlockStmt, this cannot be empty. Needed to avoid ambiguity
+// in top-level statements.
+NonEmptyBlockStmt: ExprNode
+    = "{" <Statement+> "}"
+    => ast.block(&<>, ast.void.clone());
 
 
 // Binds to captured output in suppose()
@@ -276,17 +315,17 @@ MaybeExpr: ExprNode = {
 // Any expression which is not a block. 
 SimpleExpr: ExprNode = {
     Lambda,
-    Cond,
+    CondExpr,
     Logic,
 }
 
 
-// An if-else chain
-Cond: ExprNode
+// An if-else chain in an expression context.
+CondExpr: ExprNode
     = "if"
-      <first:CondClause>
-      <rest:("elif" <CondClause>)*>
-      <default:("else" <Block>)?>
+      <first:CondExprClause>
+      <rest:("elif" <CondExprClause>)*>
+      <default:("else" <BlockExpr>)?>
     => {
         let mut clauses = vec!{first};
         clauses.extend(rest);
@@ -295,15 +334,15 @@ Cond: ExprNode
 ;
 
 
-// Single clause in an if-else chain
-CondClause: (ExprNode, ExprNode)
-    = "(" <pred: Expr> ")" <body: Block>
+// Single clause in an if-else expression.
+CondExprClause: (ExprNode, ExprNode)
+    = "(" <pred: Expr> ")" <body: BlockExpr>
     => (pred, body);
 
 
 // The subjunctive construct, as documented in github issue #20
 Suppose: StmtNode
-    = "suppose" "(" <delegate:Expr> ")" <branch:Block> "else" <leaf:Block>
+    = "suppose" "(" <delegate:Expr> ")" <branch:BlockStmt> "else" <leaf:BlockStmt>
     => ast.suppose(delegate, ast.expr_for_effect(branch), ast.expr_for_effect(leaf));
 
 
@@ -319,26 +358,35 @@ Arglist: Vec<(&'input str, TypeNode)>
     => args;
 
 
-// An anonymous function expression.
+// An anonymous function / procedure expression.
 Lambda: ExprNode = {
     <args:Arglist> <ret:("->" <Type>)?> "=" <body:SimpleExpr>
 	=> ast.lambda(
 	    &args,
-	    ret.unwrap_or(ast.t_void.clone()),
+	    ret.unwrap_or(ast.t_any.clone()),
 	    body
 	),
-    <args:Arglist> <ret:("->" <Type>)?> <body:Block>
+    <args:Arglist> <ret:("->" <Type>)> <body:BlockExpr>
 	=> ast.lambda(
 	    &args,
-	    ret.unwrap_or(ast.t_void.clone()),
+	    ret,
+	    body
+	),
+    <args:Arglist> <body:BlockStmt>
+	=> ast.lambda(
+	    &args,
+	    ast.t_void.clone(),
 	    body
 	),
 }
     
 
 
-// A sequence of statements treated as an expression.
-Block: ExprNode = {
+// A sequence of statements with a trailing expression.
+//
+// This trailing expression is *not* optional in an expression
+// context.
+BlockExpr: ExprNode = {
     "{" <stmts:Statement+> <ret:MaybeExpr> "}"
         => ast.block(&stmts, ret),
     "{" <ret:MaybeExpr> "}"
@@ -346,7 +394,6 @@ Block: ExprNode = {
 }
 
 
-// Expression entry point anow, this is the logic operators. This way
 // sloppily-parenthesized logic hould do the least surprising thing.
 Logic: ExprNode = {
     <a:Logic> "and" <b:Rel> => ast.bin(ast::BinOp::And, a, b),
@@ -356,7 +403,8 @@ Logic: ExprNode = {
 }
 
 
-// Relational operators are the next highest precedence.
+// sloppily-parenthesized relational operators should also do the
+// least surprising thing.
 Rel: ExprNode = {
     <a:Rel> "<"  <b:Sum> => ast.bin(ast::BinOp::Lt, a, b),
     <a:Rel> ">"  <b:Sum> => ast.bin(ast::BinOp::Gt, a, b),
@@ -406,7 +454,7 @@ InvTerm: ExprNode = {
 // To simplify the grammar, templates are assumed not to return a
 // value and are purely used for their effects.
 TemplateCall: StmtNode = {
-    <func:Call> "(" <args:Args> ")" <delegate:Block>
+    <func:Call> "(" <args:Args> ")" <delegate:BlockStmt>
 	=> ast.template_call(func, &args, delegate),
     <func:Call> "(" <args:Args> ")" ";"
         => ast.expr_for_effect(ast.call(func, &args))
