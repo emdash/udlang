@@ -1,30 +1,15 @@
 use std::env;
-use std::fs;
 
 use udlang::grammar;
+use udlang::parser::parse;
 use udlang::ast::{self, Builder};
-use udlang::ir::Compiler;
+use udlang::ir::compile;
 
 use std::io::{
     BufReader,
     BufRead,
     stdin
 };
-
-
-// Parse the given path to an AST
-fn parse(path: &str) -> ast::Program {
-    let builder = Builder::new();
-    let contents = fs::read_to_string(path).expect(&format!("Couldn't read file: {}", path));
-    grammar::ProgramParser::new().parse(&builder, &contents).expect("Parse error")
-}
-
-
-// Compile the given path to IR
-fn compile(path: &str) {
-    let mut compiler = Compiler::new();
-    println!("{:?}", compiler.compile_program(parse(path)))
-}
 
 
 // Dump expressions in a REPL

@@ -108,7 +108,7 @@ pub type ExprNode = Node<Expr>;
 pub type TypeNode = Node<TypeTag>;
 pub type StmtNode = Node<Statement>;
 pub type MemberNode = Node<Member>;
-
+pub type Float = eq_float::F64;
 
 // *** ADT ********************************************************************
 
@@ -219,9 +219,9 @@ pub enum Expr {
     Void,
     Bool(bool),
     Int(i64),
-    Float(f64),
+    Float(Float),
     Str(String),
-    Point(f64, f64),
+    Point(Float, Float),
     This, // the lowercase `self` keyword, but we can't call it that.
     In, // The `in` keyword.
     Partial, // The `$` placeholder.
@@ -417,14 +417,14 @@ impl Builder {
     }
 
     pub fn f(&self, value: f64) -> ExprNode {
-	self.subexpr(Expr::Float(value))
+	self.subexpr(Expr::Float(value.into()))
     }
 
     pub fn s(&self, value: &str) -> ExprNode {
 	self.subexpr(Expr::Str(String::from(value)))
     }
 
-    pub fn point(&self, x: f64, y: f64) -> ExprNode {
+    pub fn point(&self, x: Float, y: Float) -> ExprNode {
 	self.subexpr(Expr::Point(x, y))
     }
 

@@ -7,13 +7,29 @@
 //
 // LALRPOP lets us test each production in isolation, as well as for
 // the grammar as a whole.
+use std::fs;
+
+use crate::grammar;
+use crate::ast;
+use crate::ast::*;
+
+
+// Parse the given path to an AST
+pub fn parse(path: &str) -> ast::Program {
+    let builder = Builder::new();
+
+    let contents = fs::read_to_string(path)
+	.expect(&format!("Couldn't read file: {}", path));
+
+    grammar::ProgramParser::new()
+	.parse(&builder, &contents)
+	.expect("Syntax Error")
+}
 
 
 #[cfg(test)]
 mod tests {
-    use crate::grammar;
-    use crate::ast;
-    use crate::ast::*;
+    use super::*;
     use ast::BinOp::*;
     use ast::UnOp::*;
 
