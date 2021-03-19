@@ -90,7 +90,7 @@ pub Statement: StmtNode = {
 // Expression entry point.
 pub Expr: ExprNode = {
     Block,
-    SimpleExpr
+    SimpleExpr,
 }
 
 
@@ -262,9 +262,18 @@ Iteration: StmtNode = {
 EffectCapture: StmtNode = "..." ";" => ast.effect_capture.clone();
 
 
-// Any expression which is not a Block.
+// The trailing expression in a block.
 //
-// Needed to avoid the abiguity of nesting blocks.
+// Needed to avoid the abiguity of nesting blocks, and to restrict the
+// `done` keyword to this position only. You should not be able to
+// name `void` in general.
+MaybeExpr: ExprNode = {
+    "done" => ast.void.clone(),
+    SimpleExpr,
+}
+
+
+// Any expression which is not a block. 
 SimpleExpr: ExprNode = {
     Lambda,
     Cond,
@@ -329,12 +338,10 @@ Lambda: ExprNode = {
 
 
 // A sequence of statements treated as an expression.
-//
-// If the `yield` keyword is present, then this block has a value.
 Block: ExprNode = {
-    "{" <stmts:Statement+> <ret:("yield" <SimpleExpr>)?> "}"
-        => ast.block(&stmts, ret.unwrap_or(ast.void.clone())),
-    "{" <ret:("yield" <SimpleExpr>)> "}"
+    "{" <stmts:Statement+> <ret:MaybeExpr> "}"
+        => ast.block(&stmts, ret),
+    "{" <ret:MaybeExpr> "}"
 	=> ret,
 }
 
@@ -489,8 +496,8 @@ Boolean: bool         = {"true" => true, "false" => false};
 Str: &'input str      = <s:r#""(([^\\"]|\\.)*)""#> => &s[1..(s.len() - 1)];
 
 
-// Skip whitespace and comments.
 match {
+    // Skip whitespace and comments.
     r"\s*" => { },
     r"//[^\n\r]*[\n\r]*" => { },
     r"/\*([^\*]*\*+[^\*/])*([^\*]*\*+|[^\*])*\*/" => { },

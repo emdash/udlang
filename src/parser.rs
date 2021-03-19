@@ -433,23 +433,28 @@ mod tests {
     #[test]
     fn test_expr_block() {
 	let ast = Builder::new();
-        assert_expr("{let x = y; yield 4}", ast.block(
+        assert_expr("{let x = y; 4}", ast.block(
             &[ast.def("x", ast.id("y"))],
             ast.i(4))
         );
 
-        assert_expr("{let x = frob(y); yield y * 4}", ast.block(
+        assert_expr("{let x = frob(y); y * 4}", ast.block(
             &[ast.def("x", ast.call(ast.id("frob"), &[ast.id("y")]))],
             ast.bin(Mul, ast.id("y"), ast.i(4))
         ));
 
-        assert_expr("{out debug(x); yield x}", ast.block(
+        assert_expr("{out debug(x); x}", ast.block(
             &[ast.emit(ast.call(ast.id("debug"), &[ast.id("x")]))],
             ast.id("x")
         ));
 
+	assert_expr("{out debug(x); done}", ast.block(
+            &[ast.emit(ast.call(ast.id("debug"), &[ast.id("x")]))],
+            ast.void.clone()
+        ));
+
         assert_expr(
-            "{let x = {let y = 2; yield y * 3}; yield x}",
+            "{let x = {let y = 2;  y * 3}; x}",
             ast.block(
 		&[
                     ast.def("x",
@@ -471,6 +476,7 @@ mod tests {
               for p in points {
                   out ["moveto", p];
                   out ["circle", 50.0];
+                  done
               }
         "#;
 
@@ -497,6 +503,7 @@ mod tests {
               for (k, p) in x {
                   out ["moveto", [p.x, p.y]];
                   out ["text", k];
+                  done
               }
         "#;
 
@@ -523,7 +530,7 @@ mod tests {
     fn test_if() {
 	let ast = Builder::new();
         assert_statement(
-            "if (a) { out [\"text\", b]; }",
+            "if (a) { out [\"text\", b]; done}",
             ast.guard(
                 &[(ast.id("a"),
 		   ast.block(
@@ -540,7 +547,7 @@ mod tests {
     fn test_if_else() {
 	let ast = Builder::new();
         assert_statement(
-            r#"if (a) { out a; } else { out "error"; }"#,
+            r#"if (a) { out a; done} else { out "error"; done}"#,
             ast.guard(
                 &[(ast.id("a"),
 		   ast.block(
@@ -558,11 +565,11 @@ mod tests {
 	let ast = Builder::new();
         assert_statement(
             r#"if (a) {
-               out "a";
+               out "a"; done
             } elif (b) {
-               out "b";
+               out "b"; done
             } else {
-               out "error";
+               out "error"; done
             }"#,
             ast.guard(
                 &[
@@ -575,13 +582,13 @@ mod tests {
 
         assert_statement(
             r#"if (a) {
-               out "a";
+               out "a"; done
             } elif (b) {
-               out "b";
+               out "b"; done
             } elif (c) {
-               out "c";
+               out "c"; done
             } else {
-               out "error";
+               out "error"; done
             }"#,
             ast.guard(
                 &[
@@ -599,9 +606,9 @@ mod tests {
 	let ast = Builder::new();
         assert_statement(
             r#"if (a) {
-               out "a";
+               out "a"; done
             } elif (b) {
-               out "b";
+               out "b"; done
             }"#,
             ast.guard(
                 &[
@@ -614,11 +621,11 @@ mod tests {
 
         assert_statement(
             r#"if (a) {
-               out "a";
+               out "a"; done
             } elif (b) {
-               out "b";
+               out "b"; done
             } elif (c) {
-               out "c";
+               out "c"; done
             }"#,
             ast.guard(
                 &[
@@ -639,7 +646,7 @@ mod tests {
         ));
 
         assert_statement(
-            "foo() { out \"paint\";}",
+            "foo() { out \"paint\"; done}",
             ast.template_call(ast.id("foo"), &[], ast.block(
 		&[ast.emit(ast.s("paint"))],
 		ast.void.clone()
@@ -652,8 +659,10 @@ mod tests {
                 bar(y, z) {
                    gronk();
                    frobulate();
+                   done
                 }
                 frobulate();
+                done
             }
             "#,
             ast.template_call(
@@ -761,7 +770,7 @@ mod tests {
 
 	assert_statement(
 	    r#"
-            for i in in { out i; }
+            for i in in { out i; done}
             "#,
 	    ast.list_iter(
 		"i",
@@ -774,7 +783,7 @@ mod tests {
 
 	assert_statement(
 	    r#"
-            for i in in.items { out i; }
+            for i in in.items { out i; done}
             "#,
 	    ast.list_iter(
 		"i",
@@ -997,7 +1006,7 @@ mod tests {
     fn test_statement_function_def() {
 	let ast = Builder::new();
         assert_statement(
-            r#"func foo(y: Int) -> Int {yield 4 * y}"#,
+            r#"func foo(y: Int) -> Int {4 * y}"#,
             ast.def(
                 "foo",
                 ast.lambda(
@@ -1010,7 +1019,7 @@ mod tests {
 
         assert_statement(
             r#"proc foo(y: Int) {
-               out "paint";
+               out "paint"; done
             }"#,
             ast.def(
                 "foo",
@@ -1246,8 +1255,10 @@ mod tests {
                ...;
                ...;
                ...;
+               done
             } else {
                out "Yesterdayyyyyy.....";
+               done
             }
             "#,
 	    ast.suppose(
