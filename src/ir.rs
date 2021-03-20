@@ -335,7 +335,7 @@ pub enum Instruction {
 
 
 // An instruction sequence we can append to
-type Block = Vec<Instruction>;
+pub type Block = Vec<Instruction>;
 
 
 // A location on the stack for captures
@@ -514,7 +514,7 @@ impl Compiler {
     // Try to compile a libray to an IR module.
     pub fn compile_library(
 	&mut self,
-	desc: String,
+	_desc: String,
 	decls: Vec<StmtNode>
     ) -> Result<Module> {
 	self.scopes.push()?;
@@ -579,7 +579,7 @@ impl Compiler {
 	self.emit(Instruction::Def(index))
     }
 
-    pub fn compile_typedef(&mut self, id: &str, expr: &TypeNode) -> Result<()> {
+    pub fn compile_typedef(&mut self, _id: &str, _expr: &TypeNode) -> Result<()> {
 	Error::not_implemented("local typedefs")
     }
 
@@ -762,12 +762,11 @@ impl Compiler {
     // chain.
     pub fn compile_lookup(&mut self, id: &str) -> Result<()> {
 	let path = self.scopes.get_path(id)?;
-	let CapturePath {frame, index} = path;
 
-	match (frame, index) {
-	    (0,     index) => self.emit(Instruction::Arg(Binding::Local, index)),
-	    (1,     index) => self.emit(Instruction::Arg(Binding::Arg, index)),
-	    (frame, index) => {
+	match (path.frame, path.index) {
+	    (0, index) => self.emit(Instruction::Arg(Binding::Local, index)),
+	    (1, index) => self.emit(Instruction::Arg(Binding::Arg, index)),
+	    _ => {
 		// Captures need special handling.
 		//
 		// The positional index of the argument at runtime is

@@ -3,7 +3,8 @@ use std::env;
 use udlang::grammar;
 use udlang::parser::parse;
 use udlang::ast::{self, Builder};
-use udlang::ir::compile;
+use udlang::ir::{compile, Value};
+use udlang::vm::run;
 
 use std::io::{
     BufReader,
@@ -15,11 +16,11 @@ use std::io::{
 // Dump expressions in a REPL
 fn dump_expr() {
     let builder = Builder::new();
-    loop {
-	let mut reader = BufReader::new(stdin());
-	let mut line = String::new();
-	reader.read_line(&mut line).unwrap();
-	println!("{:?}", grammar::ExprParser::new().parse(&builder, &line));
+    for line in stdin().lock().lines() {
+	println!(
+	    "{:?}",
+	    grammar::ExprParser::new().parse(&builder, &line.unwrap())
+	);
     }
 }
 
@@ -36,6 +37,13 @@ fn dump_ir(path: &str) {
 }
 
 
+// Try to decode an ir::Value from a string
+fn decode(input: std::io::Result<String>) -> Value {
+    // XXX: really implement me
+    Value::Str("foobar".to_string())
+}
+
+
 fn main() {
     let args: Vec<String> = env::args().into_iter().collect();
     let strargs: Vec<&str> = args.iter().map(|i| i.as_str()).collect();
@@ -44,6 +52,7 @@ fn main() {
 	[_, "--dump-expr"] => dump_expr(),
 	[_, "--dump-ast", path] => dump_ast(path),
 	[_, "--compile", path] => dump_ir(path),
+	[_, path] => run(path, stdin().lock().lines().map(decode)).expect("runtime error"),
 	_ => println!("Invalid args. Usage string TBD.")
     };
 }
