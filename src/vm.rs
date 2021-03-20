@@ -1,7 +1,11 @@
 use crate::ir::{
+    Binding,
+    CallType,
+    CapturePath,
     Executable,
     Instruction,
     IR,
+    Lambda,
     Value,
     compile,
 };
@@ -63,11 +67,52 @@ where S: Iterator<Item = Value> {
     VM::new(program).run(input)
 }
 
+
+// Holds information needed to locate arguments on the stack.
+struct StackFrame {
+    pub locals: usize,
+    pub args: usize,
+    pub captures: Vec<Value>
+}
+
+
+impl StackFrame {
+    // Make a new stack frame for this function call.
+    pub fn new(
+	ct: CallType,
+	callable: &Lambda,
+	val_stack: &[Value],
+	call_stack: &[Self]
+    ) -> Self {
+	// Locals are referenced from the current stack depth
+	let locals = val_stack.len();
+	// Find the start of the arguments in the stack.
+	let args = locals - callable.arity(ct) as usize;
+
+	// Helper method to collect a value off the stack from a CapturePath.
+	let capture_from_path = |path: &CapturePath| {
+	    let frame = &call_stack[call_stack.len() - 1 - path.frame as usize];
+	    let abs = frame.locals + path.index as usize;
+	    &val_stack[abs]
+	};
+
+	// Collect the values we need to capture off the stack.
+	let captures = callable.captures
+	    .iter()
+	    .map(capture_from_path)
+	    .cloned()
+	    .collect();
+
+	StackFrame {locals, args, captures}
+    }
+}
+
     
 // Holds the state we need to execute instructions sequentially.
 pub struct VM {
     script: Executable,
-    stack: Vec<Value>,
+    value_stack: Vec<Value>,
+    call_stack: Vec<StackFrame>,
     input: Option<Value>,
 }
 
@@ -76,9 +121,10 @@ pub struct VM {
 impl VM {
     // Allocate and initialize a new virtual machine
     pub fn new(script: Executable) -> VM {
-	let stack = Vec::new();
+	let value_stack = Vec::new();
+	let call_stack = Vec::new();
 	let input = None;
-	VM {script, stack, input}
+	VM {script, value_stack, call_stack, input}
     }
 
     // Run the given script until the input iterator is exhausted.
@@ -109,9 +155,19 @@ impl VM {
 
     // Execute each instruction in the given block.
     fn exec_block(&mut self, block: &[Instruction]) -> Result<()> {
-	Ok(for insn in block {
+	// Push an empty stack frame
+	self.call_stack.push(StackFrame {
+	    locals: 0,
+	    args: 0xFF, /* XXX: do something useful here? */
+	    captures: Vec::new()
+	});
+
+	for insn in block {
 	    self.exec_insn(insn)?;
-	})
+	}
+
+	self.call_stack.pop();
+	Ok(())
     }
 
     // Execute the given instruction.
@@ -122,8 +178,8 @@ impl VM {
 		let x = &self.script.data[*addr as usize].clone();
 		self.push(&x)
 	    },
-	    Arg(_, _) => Error::not_implemented("Arg instruction"),
-	    Def(_) => Error::not_implemented("Local var"),
+	    Arg(binding, x) => self.arg(*binding, *x),
+	    Def(_) => Ok(()) /* XXX: we don't need this instruction */,
 	    Un(_) => Error::not_implemented("Unary operator"),
 	    Bin(_) => Error::not_implemented("Binary operator"),
 	    Call(_) => Error::not_implemented("Function call"),
@@ -141,13 +197,27 @@ impl VM {
 	}
     }
 
+    // Copy an argument or captured value to the top of stack.
+    fn arg(&mut self, binding: Binding, pos: u8) -> Result<()> {
+	let value = {
+	    let top = self.call_stack.len() - 1;
+	    let frame = &self.call_stack[top];
+	    match binding {
+		Binding::Local => self.abs(frame.locals + pos as usize),
+		Binding::Arg => self.abs(frame.args + pos as usize),
+		Binding::Capture => Ok(&frame.captures[pos as usize])
+	    }
+	}?.clone(); /* XXX UGH THIS IS FINE! I HATE THE BORROW CHECKER!!! */
+	self.push(&value)
+    }
+
     fn push(&mut self, value: &Value) -> Result<()> {
-	self.stack.push(value.clone());
+	self.value_stack.push(value.clone());
 	Ok(())
     }
 
     fn pop(&mut self) -> Result<Value> {
-	if let Some(value) = self.stack.pop() {
+	if let Some(value) = self.value_stack.pop() {
 	    Ok(value)
 	} else {
 	    Error::stack_underflow()
@@ -155,9 +225,17 @@ impl VM {
     }
 
     fn peek(&self, rel: u8) -> Result<&Value> {
-	let len = self.stack.len();
+	let len = self.value_stack.len();
 	if len > 0 {
-	    Ok(&self.stack[len - 1 - rel as usize])
+	    Ok(&self.value_stack[len - 1 - rel as usize])
+	} else {
+	    Error::stack_underflow()
+	}
+    }
+
+    fn abs(&self, pos: usize) -> Result<&Value> {
+	if pos < self.value_stack.len() {
+	    Ok(&self.value_stack[pos])
 	} else {
 	    Error::stack_underflow()
 	}
