@@ -26,3 +26,4 @@ lalrpop_mod!(pub grammar);
 pub mod parser;
 pub mod typechecker;
 pub mod ir;
+pub mod vm;
