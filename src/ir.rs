@@ -1,12 +1,14 @@
 use crate::ast::{
     self,
     BinOp,
-    UnOp, Seq,
-    StmtNode,
     ExprNode,
-    TypeNode,
-    Statement,
+    Node,
     Program,
+    Seq,
+    Statement,
+    StmtNode,
+    TypeNode,
+    UnOp,
 };
 
 use crate::parser;
@@ -18,7 +20,6 @@ use std::fmt::Debug;
 
 
 type Addr = u16;
-type Boxed<T> = std::rc::Rc<T>;
 type Float = eq_float::F64;
 
 
@@ -158,23 +159,23 @@ pub struct ScopeChain<T> {
 }
 
 
-impl<T> ScopeChain<T> {
-    fn new() -> ScopeChain<T> {
+impl<T: Clone + Debug> ScopeChain<T> {
+    pub fn new() -> ScopeChain<T> {
 	ScopeChain {
 	    scopes: Vec::new()
 	}
     }
 
-    fn top(&self) -> &(BiVec<String>, HashMap<String, T>) {
+    pub fn top(&self) -> &(BiVec<String>, HashMap<String, T>) {
 	&self.scopes[self.scopes.len() - 1]
     }
 
-    fn top_mut(&mut self) -> &mut (BiVec<String>, HashMap<String, T>) {
+    pub fn top_mut(&mut self) -> &mut (BiVec<String>, HashMap<String, T>) {
 	let len = self.scopes.len() - 1;
 	&mut self.scopes[len]
     }
 
-    fn push(&mut self) -> Result<()> {
+    pub fn push(&mut self) -> Result<()> {
 	if self.scopes.len() < 256 {
 	    self.scopes.push((BiVec::new(), HashMap::new()));
 	    Ok(())
@@ -183,7 +184,7 @@ impl<T> ScopeChain<T> {
 	}
     }
 
-    fn pop(&mut self) -> Result<(BiVec<String>, HashMap<String, T>)> {
+    pub fn pop(&mut self) -> Result<(BiVec<String>, HashMap<String, T>)> {
 	if let Some(scope) = self.scopes.pop() {
 	    Ok(scope)
 	} else {
@@ -191,19 +192,54 @@ impl<T> ScopeChain<T> {
 	}
     }
 
-    fn define(&mut self, id: &str, value: T) -> Result<()> {
+    // Pop the top of stack into an ordered list of values.
+    pub fn pop_values(&mut self) -> Result<Vec<T>> {
+	let (names, mut values) = self.pop()?;
+	Ok(
+	    names
+		.into_vec()
+		.into_iter()
+		.map(|name| values.remove(&name).expect("corrupted scope chain"))
+		.collect()
+	)
+    }
+
+    // Add an item, if doesn't already exist, and return the index in
+    // the current scope.
+    //
+    // This item will always be inserted into the top scope, shadowing
+    // any with the same name in parent scopes.
+    //
+    // This can fail if the index overflows the 8-bit argument limit.
+    // XXX: argument indices should probably be at least a type alias,
+    // in case we decide we need more than 256 arguments.
+    pub fn insert(&mut self, id: &str, value: T) -> Result<u8> {
+	// XXX: This could probably be optimized. For now it doesn't
+	// matter.
+	match self.try_insert(id, value) {
+	    Ok(index) => Ok(index),
+	    Err(Error::Duplicate(_)) => Ok(self.get_path(id)?.index),
+	    err => err
+	}
+    }
+
+    // Like insert, but will error if the key already exists.
+    pub fn try_insert(&mut self, id: &str, value: T) -> Result<u8> {
 	let (indices, values) = self.top_mut();
 
+	println!("{:?} {:?}", id, value);
+
 	if indices.len() <= 256 {
-	    indices.try_push(id.to_string())?;
+	    let index = indices.try_push(id.to_string())?;
 	    values.insert(id.to_string(), value);
-	    Ok(())
+	    Ok(index as u8)
 	} else {
 	    Error::too_many_arguments()
 	}
     }
 
-    fn index(&self, id: &str) -> Result<(u8, u8)> {
+    // Get the path of `id`, whereever it may be in the scope chain.
+    pub fn get_path(&self, id: &str) -> Result<CapturePath> {
 	// XXX: slightly annoying to have to make a copy for a look-up
 	// it's due to BiVec being generic over T, and not specialized
 	// for `String` / borrowing.
@@ -211,11 +247,36 @@ impl<T> ScopeChain<T> {
 
 	for (scope, (indices, values)) in self.scopes.iter().rev().enumerate() {
 	    if values.contains_key(&id) {
-		return Ok((scope as u8, indices.index(&id.to_string())? as u8))
+		return Ok(CapturePath {
+		    frame: scope as u8,
+		    index: indices.index(&id.to_string())? as u8,
+		})
 	    }
 	}
 
 	Error::not_found(id)
+    }
+
+    // Try to find the value associated with `id` in this scope chain.
+    pub fn get(&self, id: &str) -> Result<T> {
+	// XXX: slightly annoying to have to make a copy for a look-up
+	// it's due to BiVec being generic over T, and not specialized
+	// for `String` / borrowing.
+	let id = id.to_string();
+
+	for (_, values) in self.scopes.iter().rev() {
+	    if let Some(value) = values.get(&id) {
+		return Ok(value.clone());
+	    }
+	}
+
+	Error::not_found(id)
+    }
+
+    // Get the current length of the current scope
+    pub fn len(&self) -> Result<u8> {
+	// XXX: top and top_mut() should take return a result.
+	Ok(self.top().0.len() as u8)
     }
 }
 
@@ -228,7 +289,8 @@ impl<T> ScopeChain<T> {
 #[repr(u8)]
 pub enum CallType {
     Always,
-    If(bool)
+    If(bool),
+    IfElse
 }
 
 
@@ -241,11 +303,20 @@ pub enum IndexType {
 }
 
 
+// Bookeeping enumeration for lexical bindings
+#[derive(Copy, Clone, Debug, PartialEq, Eq, Hash)]
+pub enum Binding {
+    Local,
+    Arg,
+    Capture
+}
+
+
 #[derive(Copy, Clone, Debug, PartialEq, Eq, Hash)]
 #[repr(u32)]
 pub enum Instruction {
     Const(Addr),
-    Arg(u8, u8),
+    Arg(Binding, u8),
     Def(u8),
     Un(UnOp),
     Bin(BinOp),
@@ -263,26 +334,71 @@ pub enum Instruction {
 }
 
 
+// An instruction sequence we can append to
 type Block = Vec<Instruction>;
 
 
+// A location on the stack for captures
+#[derive(Copy, Clone, Debug, PartialEq, Eq, Hash)]
+pub struct CapturePath {
+    // We use a flat list of captures.
+    pub frame: u8,
+    pub index: u8
+}
+
+
+// XXX: implement me optimized
+pub type Point = (Float, Float);
+
+
+// A block of code and the meta-data required to call it.
+#[derive(Clone, Debug, PartialEq, Eq, Hash)]
+pub struct Lambda {
+    pub code: Block,
+    pub args: u8,
+    pub locals: u8,
+    pub rets: u8,
+    pub captures: Vec<CapturePath>
+}
+
+
+// An instance of a record-value.
+#[derive(Clone, Debug, PartialEq, Eq, Hash)]
+pub struct RecordValue {
+    // XXX: Store TypeTag here, or an equivalent representation. The
+    // idea is that the dot and index operations should be able to
+    // resolve to something at runtime.
+    //
+    // We should be able to contruct a flattened definition on the
+    // stack when processing record definitions.
+    //
+    // A member may be defined on the class type itself, in which case
+    // indexing that field should a value from the record definition,
+    // otherwise it pulls the value out of the `values` vector.
+    //
+    // Methods will need a way to implicitly bind the value of `self`.
+    // 
+    // pub definition: Map<String, Member>,
+    pub values: Vec<Value>
+}
+
+
+// Holds any representable value.
+//
+// Since this is IR, we don't bother with boxing values. The goal here
+// is clarity.
 #[derive(Clone, Debug, PartialEq, Eq, Hash)]
 pub enum Value {
     Bool(bool),
     Int(i64),
     Float(Float),
     Str(String),
-    Type(Boxed<TypeTag>),
-    Point(Float, Float),
-    Lambda {
-	code: Block,
-	args: u8,
-	rets: u8,
-	captures: Vec<Value>
-    },
+    Type(TypeTag),
+    Point(Point),
+    Lambda(Lambda),
     List(Vec<Value>),
     Map(Vec<(String, Value)>),
-    Record(Boxed<TypeTag>, Vec<Value>)
+    Record(RecordValue)
 }
 
 
@@ -298,7 +414,7 @@ pub enum TypeTag {
     Lambda(u8, u8),
     List,
     Map,
-    Record
+    Record,
 }
 
     
@@ -330,22 +446,12 @@ pub struct Module {
 }
 
 
-// Bookeeping enumeration for lexical bindings
-#[derive(Clone, Debug, PartialEq)]
-pub enum Binding {
-    Argument(u8, TypeNode),
-    Local(u8, TypeNode),
-    Capture(u8, TypeNode)
-}
-
-
 // Holds state required to process an AST into IR.
 pub struct Compiler {
     data: BiVec<Value>,
     blocks: Vec<Block>,
-    scopes: ScopeChain<Binding>,
-    // TBD: scope chain / stack
-    // TBD: modules.
+    scopes: ScopeChain<TypeNode>,
+    captures: ScopeChain<CapturePath>,
 }
 
 
@@ -358,6 +464,7 @@ impl Compiler {
 	    data: BiVec::new(),
 	    blocks: Vec::new(),
 	    scopes: ScopeChain::new(),
+	    captures: ScopeChain::new()
 	}
     }
 
@@ -446,13 +553,30 @@ impl Compiler {
 	Ok(())
     }
 
+    // Compile an ouptut instruction.
     pub fn compile_emit(&mut self, expr: &ExprNode) -> Result<()> {
 	self.compile_expr(expr)?;
 	self.emit(Instruction::Out)
     }
 
+    // Compile a lexical binding
+    //
+    // AKA "variable" binding, AKA "let binding" (all values in uDLang
+    // are technically const).
     pub fn compile_def(&mut self, id: &str, expr: &ExprNode) -> Result<()> {
-	Error::not_implemented("local bindings")
+	// We need to convert the local name to an argument index.  Do
+	// this first so that recursive function calls will resolve to
+	// the correct stack slot.
+	//
+	// Duplicate definitions are an error, so we use try_insert
+	// rather than insert.
+	let index = self.scopes.try_insert(id, /* XXX */ Node::new(ast::TypeTag::Any))?;
+	// We need to place the expression representing the value of
+	// the binding onto the stack.
+	self.compile_expr(expr)?;
+	// Now we can emit the instruction which will consume the
+	// value and store it in the local stack frame.
+	self.emit(Instruction::Def(index))
     }
 
     pub fn compile_typedef(&mut self, id: &str, expr: &TypeNode) -> Result<()> {
@@ -471,22 +595,22 @@ impl Compiler {
 	    Int(i)                  => self.compile_const(Value::Int(*i)),
 	    Float(f)                => self.compile_const(Value::Float(*f)),
 	    Str(s)                  => self.compile_const(Value::Str(s.clone())),
-	    Point(x, y)             => self.compile_const(Value::Point(*x, *y)),
+	    Point(x, y)             => self.compile_const(Value::Point((*x, *y))),
 	    This                    => Error::not_implemented("self"),
 	    In                      => self.emit(Instruction::In),
 	    Partial                 => self.emit(Instruction::Placeholder),
 	    List(_)                 => Error::not_implemented("list literal"),
 	    Map(_)                  => Error::not_implemented("map literal"),
-	    Id(_)                   => Error::not_implemented("variable lookup"),
+	    Id(id)                  => self.compile_lookup(id),
 	    Dot(_, _)               => Error::not_implemented("fixed index"),
 	    Has(_, _)               => Error::not_implemented("member test"),
 	    Index(_, _)             => Error::not_implemented("computed index"),
-	    Cond(_, _)              => Error::not_implemented("conditional"),
+	    Cond(conds, default)    => self.compile_conds(conds, default),
 	    Block(stmts, ret)       => self.compile_block(stmts, ret),
 	    BinOp(op, l, r)         => self.compile_bin(*op, l, r),
 	    UnOp(op, operand)       => self.compile_un(*op, operand),
 	    Call(func, args)        => self.compile_call(func, args),
-	    Lambda(args, ret, body) => Error::not_implemented("lambda expressions")
+	    Lambda(args, ret, body) => self.compile_lambda(args, ret, body)
 	}?;
 
 	Ok(())
@@ -503,8 +627,36 @@ impl Compiler {
 	self.emit(Instruction::Const(addr))
     }
 
+    // Conds
+    //
+    // 
+    pub fn compile_conds(
+	&mut self,
+	conds: &[(ExprNode, ExprNode)],
+	default: &ExprNode
+    ) -> Result<()> {
+	// Compile the if, elif blocks as (cond) (block) (call(true))
+	let last = conds.len() - 1;
+	for (cond, action) in conds[..last].iter() {
+	    self.compile_expr(cond)?;
+	    self.compile_basic_block(action)?;
+	    self.emit(Instruction::Call(CallType::If(true)))?;
+	}
+
+	// Compile the Last item as if-else with default.
+	let (cond, action) = &conds[last];
+	self.compile_expr(cond)?;
+	self.compile_basic_block(action)?;
+	self.compile_basic_block(default)?;
+	self.emit(Instruction::Call(CallType::IfElse))
+    }
+
     // Iterate over the statements in a block, and compile each.
-    pub fn compile_block(&mut self, stmts: &[StmtNode], ret: &ExprNode) -> Result<()> {
+    pub fn compile_block(
+	&mut self,
+	stmts: &[StmtNode],
+	ret: &ExprNode
+    ) -> Result<()> {
 	self.scopes.push()?;
 
 	for statement in stmts {
@@ -518,7 +670,12 @@ impl Compiler {
     }
 
     // Try to compile a binary operator
-    pub fn compile_bin(&mut self, op: BinOp, l: &ExprNode, r: &ExprNode) -> Result<()> {
+    pub fn compile_bin(
+	&mut self,
+	op: BinOp,
+	l: &ExprNode,
+	r: &ExprNode
+    ) -> Result<()> {
 	self.compile_expr(l)?;
 	self.compile_expr(r)?;
 	self.emit(Instruction::Bin(op))
@@ -537,12 +694,93 @@ impl Compiler {
     // foo(1, 2, 3) => [1 2 3 <foo> call]
     //
     // Inside the call of foo, arg(0) is 1.
-    pub fn compile_call(&mut self, func: &ExprNode, args: &[ExprNode]) -> Result<()> {
+    pub fn compile_call(
+	&mut self,
+	func: &ExprNode,
+	args: &[ExprNode]
+    ) -> Result<()> {
 	self.compile_expr(func)?;
 	for arg in args {
 	    self.compile_expr(arg)?;
 	}
 	self.emit(Instruction::Call(CallType::Always))
+    }
+
+    // Special case of lambda: a block which takes 0 arguments.
+    pub fn compile_basic_block(&mut self, body: &ExprNode) -> Result<()> {
+	self.compile_lambda(&[], /* XXX */ &Node::new(ast::TypeTag::Any), body)
+    }
+
+    // Compile a function value.
+    pub fn compile_lambda(
+	&mut self,
+	args: &[(String, TypeNode)],
+	ret: &TypeNode,
+	body: &ExprNode
+    ) -> Result<()> {
+	// First we put the formal parameters into scope.
+	self.scopes.push()?;
+	for (id, _) in args {
+	    // Duplicate parameter names would be an error, so let's
+	    // flag that here by using try_insert.
+	    self.scopes.try_insert(id, /* XXX */ Node::new(ast::TypeTag::Any))?;
+	}
+
+	// Now we push an inner scope for local bindings.
+	self.scopes.push()?;
+	// Push the capture scope.
+	self.captures.push()?;
+
+	// Create a code block to hold the lambda's code.
+	self.blocks.push(Block::new());
+	// Compile the body.
+	self.compile_expr(body)?;
+
+	// Pop our code and capture list off their respective stacks.
+	let code = self.blocks.pop().expect("Block stack underflow");
+	let captures = self.captures.pop_values()?;
+
+	// Compute the rest of the meta-data we need
+	let locals = self.scopes.pop()?.0.len() as u8;
+	let args = self.scopes.pop()?.0.len() as u8;
+	let rets = match ret.deref() {
+	    ast::TypeTag::Void => 0,
+	    // XXX: may need to multiple return values at some point,
+	    // for example, to support destructuring assignments. For
+	    // now this is either going to be zero or one.
+	    _ => 1
+	};
+
+	// Now this is key: the actual value is placed on the stack as
+	// a *constant value*.
+	self.compile_const(Value::Lambda(Lambda {
+	    code, args, locals, rets, captures
+	}))
+    }
+
+    // Map id to instruction by looking up the value in the scope
+    // chain.
+    pub fn compile_lookup(&mut self, id: &str) -> Result<()> {
+	let path = self.scopes.get_path(id)?;
+	let CapturePath {frame, index} = path;
+
+	match (frame, index) {
+	    (0,     index) => self.emit(Instruction::Arg(Binding::Local, index)),
+	    (1,     index) => self.emit(Instruction::Arg(Binding::Arg, index)),
+	    (frame, index) => {
+		// Captures need special handling.
+		//
+		// The positional index of the argument at runtime is
+		// its index in the capture list, not its path in the
+		// lexical scope chain.
+		//
+		// The capture may or may not already be defined,
+		// which is fine -- captures can be used more than
+		// once -- so we use insert, rather than try_insert.
+		let position = self.captures.insert(id, path)?;
+		self.emit(Instruction::Arg(Binding::Capture, position))
+	    }
+	}
     }
 
     // Emit an instruction to the output.
@@ -583,10 +821,11 @@ impl Instruction {
     }
 
     pub fn call_arity(self, ct: CallType, top: &Value) -> Result<(u8, u8)> {
-	if let &Value::Lambda {code: _, args, rets, captures: _} = top {
+	if let Value::Lambda(l)  = top {
 	    match ct {
-		CallType::Always => Ok((1 + args, rets)),
-		CallType::If(_)  => Ok((2 + args, rets))
+		CallType::Always => Ok((1 + l.args, l.rets)),
+		CallType::If(_)  => Ok((2 + l.args, l.rets)),
+		CallType::IfElse => Ok((3 + l.args, l.rets)),
 	    }
 	} else {
 	    Error::not_callable(top)
@@ -605,7 +844,6 @@ pub fn compile(path: &str) -> IR {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use std::fs;
 
     fn assert_file(path: &str, expected: IR) {
 	assert_eq!(compile(path), expected)
