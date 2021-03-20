@@ -379,7 +379,6 @@ Lambda: ExprNode = {
 	    body
 	),
 }
-    
 
 
 // A sequence of statements with a trailing expression.

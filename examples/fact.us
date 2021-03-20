@@ -1,0 +1,17 @@
+#! udlang
+
+version 0.1-pre_mvp;
+script "Factorial Example";
+
+input  Int;
+output Int;
+
+func fact(n: Int) -> Int {
+  if (n > 1) {
+    n * fact(n - 1)
+  } else {
+    n
+  }
+}
+
+out fact(in);
