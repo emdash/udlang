@@ -362,6 +362,17 @@ pub struct Lambda {
 }
 
 
+impl Lambda {
+    // Return the arity of the call instruction according to its type.
+    pub fn arity(&self, ct: CallType) -> u8 {
+	match ct {
+	    CallType::Always => 1 + self.args,
+	    CallType::If(_)  => 2 + self.args,
+	    CallType::IfElse => 3 + self.args,
+	}
+    }
+}
+
 // An instance of a record-value.
 #[derive(Clone, Debug, PartialEq, Eq, Hash)]
 pub struct RecordValue {
@@ -791,44 +802,6 @@ impl Compiler {
 	let top = self.blocks.len() - 1;
 	self.blocks[top].push(inst);
 	Ok(())
-    }
-}
-
-
-impl Instruction {
-    // The argument arity of an instruction may depend on the top-most
-    // stack value.
-    pub fn arity(self, top: &Value) -> Result<(u8, u8)> {
-	match self {
-	    Instruction::Const(_)      => Ok((0, 1)),
-	    Instruction::Arg(_, _ )    => Ok((0, 1)),
-	    Instruction::Def(_)        => Ok((1, 0)),
-	    Instruction::Un(_)         => Ok((1, 1)),
-	    Instruction::Bin(_)        => Ok((2, 1)),
-	    Instruction::In            => Ok((0, 1)),
-	    Instruction::Out           => Ok((1, 0)),
-	    Instruction::Debug         => Ok((0, 0)),
-	    Instruction::Drop(n)       => Ok((n, 0)),
-	    Instruction::Swap(_, _)    => Ok((0, 0)),
-	    Instruction::Dup(n)        => Ok((0, n)),
-	    Instruction::Placeholder   => Ok((0, 1)),
-	    Instruction::Index(_)      => Ok((2, 1)),
-	    Instruction::Coerce        => Ok((2, 1)),
-	    Instruction::Matches       => Ok((2, 1)),
-	    Instruction::Call(variant) => self.call_arity(variant, top)
-	}
-    }
-
-    pub fn call_arity(self, ct: CallType, top: &Value) -> Result<(u8, u8)> {
-	if let Value::Lambda(l)  = top {
-	    match ct {
-		CallType::Always => Ok((1 + l.args, l.rets)),
-		CallType::If(_)  => Ok((2 + l.args, l.rets)),
-		CallType::IfElse => Ok((3 + l.args, l.rets)),
-	    }
-	} else {
-	    Error::not_callable(top)
-	}
     }
 }
 
