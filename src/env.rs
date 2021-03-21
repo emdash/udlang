@@ -1,3 +1,5 @@
+// (C) 2021 Brandon Lewis
+
 use crate::ast::{Node, AList, Map};
 use std::cell::RefCell;
 use std::fmt::Debug;

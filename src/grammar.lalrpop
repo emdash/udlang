@@ -1,6 +1,8 @@
+// (C) 2021 Brandon Lewis
+//
 // LALRPOP grammar for the VM front-end.
 //
-// Adapted from that found in the `amath` crate, with heavy additions.
+// Expression grammar is adapted from the the `amath` crate, with heavy additions.
 // https://github.com/vpzomtrrfrt/amath/blob/master/src/grammar.lalrpop
 
 use crate::ast;
@@ -235,7 +237,7 @@ TypeDef: StmtNode
 // Send a value downstream on the output channel.
 Effect: StmtNode
     = "out" <value:Expr> ";"
-    => ast.emit(value);
+    => ast.out(value);
 
 
 // Bind a name to a value.

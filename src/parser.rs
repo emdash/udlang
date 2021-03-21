@@ -1,3 +1,5 @@
+// (C) 2021 Brandon Lewis
+//
 // Mostly just a place to hold the unit tests for the grammar. The
 // actual parser is just a wrapper around what LALRPOP has generated for us.
 //
@@ -418,10 +420,10 @@ mod tests {
     #[test]
     fn test_simple_statement() {
 	let ast = Builder::new();
-        assert_statement("out \"fill\";", ast.emit(ast.s("fill")));
+        assert_statement("out \"fill\";", ast.out(ast.s("fill")));
         assert_statement(
             "out moveto(x, y);",
-            ast.emit(ast.call(ast.id("moveto"), &[ast.id("x"), ast.id("y")]))
+            ast.out(ast.call(ast.id("moveto"), &[ast.id("x"), ast.id("y")]))
         );
 
         assert_statement(
@@ -444,7 +446,7 @@ mod tests {
         ));
 
         assert_expr("{out debug(x); x}", ast.block(
-            &[ast.emit(ast.call(ast.id("debug"), &[ast.id("x")]))],
+            &[ast.out(ast.call(ast.id("debug"), &[ast.id("x")]))],
             ast.id("x")
         ));
 
@@ -479,7 +481,7 @@ mod tests {
 
         assert_statement(
 	    "{out debug(x);}",
-	    ast.emit(ast.call(ast.id("debug"), &[ast.id("x")]))
+	    ast.out(ast.call(ast.id("debug"), &[ast.id("x")]))
 	);
 
         assert_statement(
@@ -492,7 +494,7 @@ mod tests {
 				ast.bin(Mul, ast.id("y"), ast.i(3))
 			    )
                     ),
-		    ast.emit(ast.id("x"))
+		    ast.out(ast.id("x"))
 		],
 		ast.void.clone()
 	    ))
@@ -514,8 +516,8 @@ mod tests {
 	    ast.id("points"),
 	    ast.expr_for_effect(ast.block(
 		&[
-		    ast.emit(ast.list(&[ast.s("moveto"), ast.id("p")])),
-		    ast.emit(ast.list(&[ast.s("circle"), ast.f(50.0)]))
+		    ast.out(ast.list(&[ast.s("moveto"), ast.id("p")])),
+		    ast.out(ast.list(&[ast.s("circle"), ast.f(50.0)]))
 		],
 		ast.void.clone()
 	    ))
@@ -540,12 +542,12 @@ mod tests {
 	    ast.id("x"),
 	    ast.expr_for_effect(ast.block(
 		&[
-		    ast.emit(ast.list(&[
+		    ast.out(ast.list(&[
 			ast.s("moveto"),
 			ast.list(&[ast.dot(ast.id("p"), "x"),
 				   ast.dot(ast.id("p"), "y")])
 		    ])),
-		    ast.emit(ast.list(&[ast.s("text"), ast.id("k")]))
+		    ast.out(ast.list(&[ast.s("text"), ast.id("k")]))
 		],
 		ast.void.clone()
 	    ))
@@ -562,7 +564,7 @@ mod tests {
             ast.guard(
                 &[(ast.id("a"),
 		   ast.block(
-		       &[ast.emit(ast.list(&[ast.s("text"), ast.id("b")]))],
+		       &[ast.out(ast.list(&[ast.s("text"), ast.id("b")]))],
 		       ast.void.clone()
 		   ))
 		],
@@ -579,11 +581,11 @@ mod tests {
             ast.guard(
                 &[(ast.id("a"),
 		   ast.block(
-		       &[ast.emit(ast.id("a"))],
+		       &[ast.out(ast.id("a"))],
 		       ast.void.clone()
 		   ))
 		],
-                Some(ast.emit(ast.s("error")))
+                Some(ast.out(ast.s("error")))
             )
         );
     }
@@ -601,10 +603,10 @@ mod tests {
             }"#,
             ast.guard(
                 &[
-                    (ast.id("a"), ast.block(&[ast.emit(ast.s("a"))], ast.void.clone())),
-                    (ast.id("b"), ast.block(&[ast.emit(ast.s("b"))], ast.void.clone())),
+                    (ast.id("a"), ast.block(&[ast.out(ast.s("a"))], ast.void.clone())),
+                    (ast.id("b"), ast.block(&[ast.out(ast.s("b"))], ast.void.clone())),
                 ],
-                Some(ast.emit(ast.s("error")))
+                Some(ast.out(ast.s("error")))
             )
         );
 
@@ -620,11 +622,11 @@ mod tests {
             }"#,
             ast.guard(
                 &[
-                    (ast.id("a"), ast.block(&[ast.emit(ast.s("a"))], ast.void.clone())),
-                    (ast.id("b"), ast.block(&[ast.emit(ast.s("b"))], ast.void.clone())),
-                    (ast.id("c"), ast.block(&[ast.emit(ast.s("c"))], ast.void.clone())),
+                    (ast.id("a"), ast.block(&[ast.out(ast.s("a"))], ast.void.clone())),
+                    (ast.id("b"), ast.block(&[ast.out(ast.s("b"))], ast.void.clone())),
+                    (ast.id("c"), ast.block(&[ast.out(ast.s("c"))], ast.void.clone())),
                 ],
-                Some(ast.emit(ast.s("error")))
+                Some(ast.out(ast.s("error")))
             )
         );
     }
@@ -640,8 +642,8 @@ mod tests {
             }"#,
             ast.guard(
                 &[
-                    (ast.id("a"), ast.block(&[ast.emit(ast.s("a"))], ast.void.clone())),
-                    (ast.id("b"), ast.block(&[ast.emit(ast.s("b"))], ast.void.clone())),
+                    (ast.id("a"), ast.block(&[ast.out(ast.s("a"))], ast.void.clone())),
+                    (ast.id("b"), ast.block(&[ast.out(ast.s("b"))], ast.void.clone())),
                 ],
                 None
             )
@@ -657,9 +659,9 @@ mod tests {
             }"#,
             ast.guard(
                 &[
-                    (ast.id("a"), ast.block(&[ast.emit(ast.s("a"))], ast.void.clone())),
-                    (ast.id("b"), ast.block(&[ast.emit(ast.s("b"))], ast.void.clone())),
-                    (ast.id("c"), ast.block(&[ast.emit(ast.s("c"))], ast.void.clone())),
+                    (ast.id("a"), ast.block(&[ast.out(ast.s("a"))], ast.void.clone())),
+                    (ast.id("b"), ast.block(&[ast.out(ast.s("b"))], ast.void.clone())),
+                    (ast.id("c"), ast.block(&[ast.out(ast.s("c"))], ast.void.clone())),
                 ],
                 None
             )
@@ -676,7 +678,7 @@ mod tests {
         assert_statement(
             "foo() { out \"paint\";}",
             ast.template_call(ast.id("foo"), &[], ast.block(
-		&[ast.emit(ast.s("paint"))],
+		&[ast.out(ast.s("paint"))],
 		ast.void.clone()
 	    ))
         );
@@ -809,7 +811,7 @@ mod tests {
 		"i",
 		ast.in_.clone(),
 		ast.expr_for_effect(
-		    ast.block(&[ast.emit(ast.id("i"))], ast.void.clone())
+		    ast.block(&[ast.out(ast.id("i"))], ast.void.clone())
 		)
 	    )
 	);
@@ -822,7 +824,7 @@ mod tests {
 		"i",
 		ast.dot(ast.in_.clone(), "items"),
 		ast.expr_for_effect(
-		    ast.block(&[ast.emit(ast.id("i"))], ast.void.clone())
+		    ast.block(&[ast.out(ast.id("i"))], ast.void.clone())
 		)
 	    )
 	);
@@ -1059,7 +1061,7 @@ mod tests {
                 ast.lambda(
                     &alist!{"y" => ast.t_int.clone()},
                     ast.t_void.clone(),
-                    ast.block(&[ast.emit(ast.s("paint"))], ast.void.clone())
+                    ast.block(&[ast.out(ast.s("paint"))], ast.void.clone())
                 )
             )
         );
@@ -1295,13 +1297,13 @@ mod tests {
 	    ast.suppose(
 		ast.call(ast.id("she_may_love_you"), &[]),
 		ast.expr_for_effect(ast.block(&[
-		    ast.emit(ast.s("She loves you,")),
+		    ast.out(ast.s("She loves you,")),
 		    ast.effect_capture.clone(),
 		    ast.effect_capture.clone(),
 		    ast.effect_capture.clone()
 		], ast.void.clone())),
 		ast.expr_for_effect(ast.block(&[
-		    ast.emit(ast.s("Yesterdayyyyyy....."))
+		    ast.out(ast.s("Yesterdayyyyyy....."))
 		], ast.void.clone()))
 	    )
 	);

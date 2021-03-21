@@ -17,7 +17,7 @@
 // <https://www.gnu.org/licenses/>.
 #[macro_use]
 extern crate lalrpop_util;
-extern crate eq_float;
+extern crate ordered_float;
 
 #[macro_use]
 pub mod ast;

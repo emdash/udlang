@@ -1,20 +1,42 @@
+// (C) 2021 Brandon Lewis
+
+use crate::ast::{
+    BinOp,
+    UnOp,
+};
+
 use crate::ir::{
-    Binding,
+    Addr,
+    // AList,
+    ArgType,
     CallType,
     CapturePath,
     Executable,
+    IndexType,
     Instruction,
     IR,
     Lambda,
+    // Map,
+    Operations,
+    Shared,
+    Seq,
+    TrapType,
+    TypeTag,
     Value,
     compile,
 };
 
 
 use std::fmt::Debug;
-use std::rc::Rc;
 
 
+/* Error Handling ************************************************************/
+
+
+// Type for VM runtime errors.
+//
+// There might be a case for unifying some the compile / runtime
+// errors, since it might impact stack-folding down the road.
 #[derive(Clone, Debug, PartialEq)]
 pub enum Error {
     StackUnderflow,
@@ -22,6 +44,7 @@ pub enum Error {
     IllegalAddr(String),
     TypeError(String),
     NotImplemented(String),
+    Trap(TrapType, Value),
     Internal(String),
 }
 
@@ -29,6 +52,14 @@ pub enum Error {
 pub type Result<T> = std::result::Result<T, Error>;
 
 
+// Provide some convenience functions returning error types under the
+// Error namespace.
+//
+// In particular, these all return a Result<T>, which means they can
+// be returned directly from `compile_*` methods in the VM.
+//
+// Note that even though these functions are generic over <T>, they
+// never actually construct or return a T.
 impl Error {
     pub fn stack_underflow<T>() -> Result<T> {
 	Err(Self::StackUnderflow)
@@ -46,7 +77,7 @@ impl Error {
 	Err(Self::TypeError(format!("{:?} is not callable", value)))
     }
 
-    pub fn type_error<T: Debug, U>(expected: T, got: T) -> Result<U> {
+    pub fn type_error<T: Debug, U: Debug, V>(expected: T, got: U) -> Result<V> {
 	Err(Self::TypeError(format!("Expected {:?}, got {:?}", expected, got)))
     }
 
@@ -54,10 +85,17 @@ impl Error {
 	Err(Self::NotImplemented(format!("{:?} is not implemented", feature)))
     }
 
+    pub fn trap<T>(tt: TrapType, value: Value) -> Result<T> {
+	Err(Self::Trap(tt, value))
+    }
+
     pub fn internal<T>(mumbo_jumbo: &str) -> Result<T> {
 	Err(Self::Internal(mumbo_jumbo.to_string()))
     }
 }
+
+
+/* Public API ****************************************************************/
 
 
 // Conveneince function to compile and run the script at the given path.
@@ -72,43 +110,200 @@ where S: Iterator<Item = Value> {
 }
 
 
-// Holds information needed to locate arguments on the stack.
+/* Stack *********************************************************************/
+
+
+// Handles the data required to execute a function.
+//
+// Rather th
 #[derive(Clone, Debug, PartialEq, Eq, Hash)]
 struct StackFrame {
-    pub locals: usize,
-    pub args: usize,
-    pub captures: Vec<Value>
+    pub args: u8,
+    pub values: Vec<Value>,
+    pub captures: Shared<Seq<Value>>,
+    pub returns_value: bool
 }
 
 
-impl StackFrame {
-    // Make a new stack frame for this function call.
-    pub fn new(
-	ct: CallType,
-	callable: &Lambda,
-	val_stack: &[Value],
-	call_stack: &[Self]
-    ) -> Self {
-	// Locals are referenced from the current stack depth
-	let locals = val_stack.len();
-	// Find the start of the arguments in the stack.
-	let args = locals - callable.arity(ct) as usize;
+// Factor out the stack logic from the virtual machine.
+//
+// Stack becomes more complex because of the need to index function
+// arguments, local variables, and captures.
+//
+// Within a block, values are processed on a stack. This stack lives
+// inside a stack frame. When a function is called, we push a new
+// stack frame, and when a function returns, we pop the stack frame.
+//
+// This is a pretty naive implementation, lots of room for improvement
+// I'm sure.
+#[derive(Clone, Debug, PartialEq, Eq, Hash)]
+struct Stack {
+    empty: Shared<Seq<Value>>,
+    frames: Vec<StackFrame>
+}
 
-	// Helper method to collect a value off the stack from a CapturePath.
-	let capture_from_path = |path: &CapturePath| {
-	    let frame = &call_stack[call_stack.len() - 1 - path.frame as usize];
-	    let abs = frame.locals + path.index as usize;
-	    &val_stack[abs]
-	};
 
-	// Collect the values we need to capture off the stack.
-	let captures = callable.captures
-	    .iter()
-	    .map(capture_from_path)
-	    .cloned()
-	    .collect();
+impl Stack {
+    pub fn new() -> Stack {
+	Stack {
+	    empty: Shared::new(Vec::new()),
+	    frames: Vec::new()
+	}
+    }
+    
+    // Push a new stack frame for the call that is about to occur.
+    pub fn push_call_frame(
+	&mut self,
+	lambda: &Lambda,
+	captures: Shared<Seq<Value>>
+    ) -> Result<()> {
+	if lambda.rets > 1 {
+	    Error::not_implemented("Multiple Return Values")
+	} else {
+	    let top = self.top_frame()?;
+	    let start = top.values.len() - lambda.args as usize - 1;
+	    let values = top.values[start..].to_vec();
+	    let args = values.len() as u8;
+	    self.frames.push(StackFrame {
+		// XXX: the .to_vec here tells me I should go back to a
+		// mono-stack design, but use the separate frame stack as
+		// *view* into the mono-stack, which is what I had
+		// intended all along, but I got bogged down in the
+		// details.
+		values: values,
+		captures: captures,
+		args: args,
+		returns_value: lambda.rets == 1
+	    });
+	    Ok(())
+	}
+    }
 
-	StackFrame {locals, args, captures}
+    pub fn push_entrypoint_frame(&mut self) -> Result<()> {
+	self.frames.push(StackFrame {
+	    values: Vec::new(),
+	    args: 0,
+	    captures: self.empty.clone(),
+	    returns_value: false
+	});
+	Ok(())
+    }
+
+    pub fn pop_frame(&mut self) -> Result<Option<Value>> {
+	if let Some(mut frame) = self.frames.pop() {
+	    if frame.returns_value {
+		Ok(Some(frame.values.pop().expect("Unpossible!")))
+	    } else {
+		Ok(None)
+	    }
+	} else {
+	    Error::stack_underflow()
+	}
+    }
+
+    pub fn top(&self) -> usize {
+	self.frames.len() - 1
+    }
+
+    pub fn top_frame(&self) -> Result<&StackFrame> {
+	let top = self.top();
+	Ok(&self.frames[top])
+    }
+
+    pub fn top_frame_mut(&mut self) -> Result<&mut StackFrame> {
+	let top = self.top();
+	Ok(&mut self.frames[top])
+    }
+
+    pub fn push(&mut self, value: Value) -> Result<()> {
+	let frame = self.top_frame_mut()?;
+	frame.values.push(value);
+	Ok(())
+    }
+
+    pub fn pop(&mut self) -> Result<Value> {
+	let frame = self.top_frame_mut()?;
+	if let Some(value) = frame.values.pop() {
+	    Ok(value)
+	} else {
+	    Error::stack_underflow()
+	}			
+    }
+
+    // Try to inspect the top of stack.
+    fn peek(&self, rel: u8) -> Result<Value> {
+	let frame = self.top_frame()?;
+	let index = frame.values.len() - rel as usize - 1;
+	if frame.values.len() > 0 {
+	    Ok(frame.values[index].clone())
+	} else {
+	    Error::stack_underflow()
+	}
+    }
+
+    fn capture_paths(&self, captures: &[CapturePath]) -> Shared<Seq<Value>>{
+	// Lambdas capture their closure values.
+	Shared::new(
+	    captures
+		.iter()
+		.map(|path| {
+		    let frame = path.frame as usize;
+		    let index = path.index as usize;
+		    self.frames[frame].values[index].clone()
+		})
+		.collect()
+	)
+    }
+}
+
+
+/* VM ************************************************************************/
+
+
+// Specialize the Operations trait for our particular result type.
+struct VMOps;
+impl Operations for VMOps {
+    type Result = Result<Value>;
+
+    fn invalid_operand(value: &Value) -> Self::Result {
+	Err(Error::TypeError(format!(
+	    "Operation is not implemented for {:?}",
+	    value,
+	)))
+    }
+
+    fn invalid_operands(l: &Value, r: &Value) -> Self::Result {
+	Err(Error::TypeError(format!(
+	    "Operation is not implemented for {:?} and {:?}",
+	    l,
+	    r
+	)))
+    }
+
+    fn invalid_cast(value: &Value, tt: TypeTag) -> Self::Result {
+	Err(Error::TypeError(format!(
+		"{:?} cannot be coerced into {:?}", value, tt
+	)))
+    }
+
+    fn index_error(collection: &Value, index: &Value) -> Self::Result {
+	Err(Error::TypeError(format!(
+	    "{:?} has no element {:?}", collection, index
+	)))
+    }
+    
+    fn type_mismatch(value: &Value, tt: TypeTag) -> Self::Result {
+	Err(Error::TypeError(format!(
+	    "Expected {:?}, but got {:?}", value, tt
+	)))
+    }
+
+    fn ok(value: Value) -> Self::Result {
+	Ok(value)
+    }
+
+    fn new<T>(value: T) -> Shared<T> {
+	Shared::new(value)
     }
 }
 
@@ -116,20 +311,21 @@ impl StackFrame {
 // Holds the state we need to execute instructions sequentially.
 pub struct VM {
     script: Executable,
-    value_stack: Vec<Value>,
-    call_stack: Vec<StackFrame>,
-    input: Option<Value>,
+    stack: Stack,
+    input: Value,
 }
 
 
-// This is the high-level interface for our VM.
+// This is a naive stack-based interpreter which directly executes the
+// IR in the `ir` module.
+//
+// This implemntation tries to KISS as far as possible.
 impl VM {
     // Allocate and initialize a new virtual machine
     pub fn new(script: Executable) -> VM {
-	let value_stack = Vec::new();
-	let call_stack = Vec::new();
-	let input = None;
-	VM {script, value_stack, call_stack, input}
+	let stack = Stack::new();
+	let input = Value::None;
+	VM {script, stack, input}
     }
 
     // Run the given script until the input iterator is exhausted.
@@ -147,14 +343,9 @@ impl VM {
     pub fn init(&mut self) -> Result<()> {
 	// XXX: It really bothers me that we can't just borrow this.
 	let block = self.script.code[0].clone();
-	// Push an empty stack frame
-	self.call_stack.push(StackFrame {
-	    locals: 0,
-	    args: 0xFF, /* XXX: do something useful here? */
-	    captures: Vec::new()
-	});
-	self.exec_block(&block);
-	self.call_stack.pop();
+	self.stack.push_entrypoint_frame()?;
+	self.exec_block(&block)?;
+	self.stack.pop_frame()?;
 	Ok(())
     }
 
@@ -162,16 +353,9 @@ impl VM {
     pub fn main(&mut self, input: Value) -> Result<()> {
 	// XXX: It really bothers me that we can't just borrow this.
 	let block = self.script.code[1].clone();
-	// Push an empty stack frame
-	self.call_stack.push(StackFrame {
-	    locals: 0,
-	    args: 0xFF, /* XXX: do something useful here? */
-	    captures: Vec::new()
-	});
-
-	self.input = Some(input);
-	self.exec_block(&block);
-	self.call_stack.expect("Call stack underflow");
+	self.input = input;
+	self.exec_block(&block)?;
+	self.stack.pop_frame()?;
 	Ok(())
     }
 
@@ -180,178 +364,200 @@ impl VM {
 	for insn in block {
 	    self.exec_insn(insn)?;
 	}
-
-	self.call_stack.pop().expect("Call stack underflow");
 	Ok(())
     }
-
-    // Execute the given instruction.
+    
+    // Dispatch over all instructions.
     fn exec_insn(&mut self, insn: &Instruction) -> Result<()> {
 	use Instruction::*;
 	println!("\n\nExec: {:?}", insn);
-	println!("Values: {:?}", self.value_stack);
-	println!("Calls: {:?}", self.call_stack);
+	println!("Stack {:?}", self.stack);
 	match insn {
-	    Const(addr) => {
-		let x = &self.script.data[*addr as usize].clone();
-		self.push(&x)
-	    },
-	    Arg(binding, x) => self.arg(*binding, *x),
-	    Def(_) => Ok(()) /* XXX: we don't need this instruction */,
-	    Un(_) => Error::not_implemented("Unary operator"),
-	    Bin(_) => Error::not_implemented("Binary operator"),
-	    Call(ct) => self.call(*ct),
-	    In => self.push(&self.input.clone().expect("No input record")),
-	    Out => {println!("{:?}", self.pop()?); Ok(())},
-	     /* XXX: should be stderr */
-	    Debug => {println!("{:?}", self.peek(0)?); Ok(())},
-	    Drop(n) => self.drop(*n),
-	    Dup(n) => self.dup(*n),
-	    Swap(x, y) => self.swap(*x, *y),
-	    Placeholder => Error::not_implemented("Partial application"),
-	    Index(_) => Error::not_implemented("Indexing into collection"),
-	    Matches => Error::not_implemented("Type query"),
-	    Coerce => Error::not_implemented("Type cast")
+	    Const(addr)       => self.load_const(*addr),
+	    Load(arg_type, x) => self.load_arg(*arg_type, *x),
+	    Store(index)      => self.store(*index),
+	    Un(opcode)        => self.unop(*opcode),
+	    Bin(opcode)       => self.binop(*opcode),
+	    Call(ct)          => self.call(*ct),
+	    
+	    In                => self.stack.push(self.input.clone()),
+
+	    Out               => {println!("{:?}", self.stack.pop()?); Ok(())},
+	     /* XXX: should print to stderr */
+	    Debug             => {println!("{:?}", self.stack.peek(0)?); Ok(())},
+	    Drop(_)           => Error::not_implemented("Drop"),
+	    Dup(_)            => Error::not_implemented("Dup"),
+	    Swap(_, _)        => Error::not_implemented("Swap"),
+	    Placeholder       => Error::not_implemented("Partial application"),
+	    Index(t)          => self.index(*t),
+	    Matches(t)        => self.matches(*t),
+	    Coerce(t)         => self.coerce(*t),
+	    TypeCheck(t)      => self.type_check(*t),
+	    Trap(trap_type)   => Error::trap(*trap_type, self.stack.pop()?)
 	}
     }
 
+    // Load values from the data section of the script.
+    //
+    // Some values need to be translated to their runtime equivalent,
+    // so this is not quite as trivial as it seems.
+    fn load_const(&mut self, addr: Addr) -> Result<()> {
+	let const_value = self.script.data[addr as usize].clone();
+	let runtime_value = match const_value {
+	    // Lambdas need to be converted to closures at this time
+	    // if they capture stack values.
+	    Value::Lambda(l) if l.captures.len() > 0 => {
+		let captures = self.stack.capture_paths(&l.captures);
+		Value::Closure(l, captures)
+	    },
+	    other => other
+	};
+	self.stack.push(runtime_value)
+    }
+
     // Copy an argument or captured value to the top of stack.
-    fn arg(&mut self, binding: Binding, pos: u8) -> Result<()> {
-	let value = {
-	    let top = self.call_stack.len() - 1;
-	    let frame = &self.call_stack[top];
-	    println!("{:?} {:?} {:?}", top, frame, pos);
-	    match binding {
-		Binding::Local => self.abs(frame.locals + pos as usize),
-		Binding::Arg => self.abs(frame.args + pos as usize),
-		Binding::Capture => Ok(&frame.captures[pos as usize])
-	    }
-	}?.clone(); /* XXX UGH THIS IS FINE! I HATE THE BORROW CHECKER!!! */
-	self.push(&value)
+    fn load_arg(&mut self, arg_type: ArgType, pos: u8) -> Result<()> {
+	let frame = self.stack.top_frame()?;
+	let localindex = frame.args as usize + pos as usize;
+	let value = match arg_type {
+	    ArgType::Local => frame.values[localindex].clone(),
+	    ArgType::Arg => frame.values[pos as usize].clone(),
+	    ArgType::Capture => frame.captures[pos as usize].clone()
+	};
+	self.stack.push(value)
+    }
+
+    // Shuffle an local variable to the correct stack slot position.
+    fn store(&mut self, pos: u8) -> Result<()> {
+	let pos = pos as usize;
+	let value = self.stack.pop()?;
+	let frame = self.stack.top_frame_mut()?;
+	if pos < frame.values.len() {
+	    frame.values[pos + frame.args as usize] = value;
+	    Ok(())
+	} else {
+	    Error::stack_underflow()
+	}
+    }
+
+    // Dispatch over unary arithmetic and logic operators.
+    fn unop(&mut self, op: UnOp) -> Result<()> {
+        let value = self.stack.pop()?;
+	self.stack.push(VMOps::unary(op, &value)?)
+    }
+
+    // Dispatch over binary arithmetic and logic operators.
+    fn binop(&mut self, op: BinOp) -> Result<()> {
+	// Remember, stack arguments pop in reverse.
+	let rhs = self.stack.pop()?;
+	let lhs = self.stack.pop()?;
+	self.stack.push(VMOps::binary(op, &lhs, &rhs)?)
     }
 
     // Top level dispatch for function calls.
     fn call(&mut self, call_type: CallType) -> Result<()> {
 	match call_type {
 	    CallType::Always    => {
-		let callable = self.pop()?;
-		self.exec_callable(call_type, callable)
+		let callable = self.stack.pop()?;
+		self.exec_callable(callable)
 	    },
-	    CallType::If(true)  => self.call_if_true(),
-	    CallType::If(false) => self.call_if_false(),
-	    CallType::IfElse    => self.call_if_else(),
+	    CallType::If     => self.call_if(),
+	    CallType::IfElse => self.call_if_else(),
 	}	
     }
 
-    // Conditional call, true case.
-    fn call_if_true(&mut self) -> Result<()> {
-	let callable = self.pop()?;
-
-	match self.pop()? {
-	    Value::Bool(true)  => self.exec_callable(CallType::If(true), callable),
-	    Value::Bool(false) => Ok(()),
-	    illegal => Error::type_error("Bool", &format!("{:?}", illegal))
-	}
-    }
-
-    // Conditional call, false case.
-    fn call_if_false(&mut self) -> Result<()> {
-	let callable = self.pop()?;
-	match self.pop()? {
-	    Value::Bool(true)  => Ok(()),
-	    Value::Bool(false) => self.exec_callable(CallType::If(true), callable),
-	    illegal => Error::type_error("Bool", &format!("{:?}", illegal))
-	}
-    }
-
-    // Conditional call, ternary case.
-    fn call_if_else(&mut self) -> Result<()> {
-	let if_false = self.pop()?;
-	let if_true = self.pop()?;
-	match self.pop()? {
-	    Value::Bool(true)  => self.exec_callable(CallType::IfElse, if_true),
-	    Value::Bool(false) => self.exec_callable(CallType::IfElse, if_false),
-	    illegal => Error::type_error("Bool", &format!("{:?}", illegal))
-	}
-    }
-
-    // Hand control to the given value if it is callable.
+    // Conditional call, single branch.
     //
-    // This takes care of managing the call stack, so callers don't
-    // have to.
-    fn exec_callable(&mut self, ct: CallType, callable: Value) -> Result<()> {
-	if let Value::Lambda(callable) = callable {
-	    // Allocate the stack frame for this call, which may or may
-	    // not occur.
-	    self.call_stack.push(StackFrame::new(
-		ct,
-		&callable,
-		&self.value_stack,
-		&self.call_stack
-	    ));
+    // Corresponds to if ... elif.
+    fn call_if(&mut self) -> Result<()> {
+	let callable = self.stack.pop()?;
+	let cond = self.stack.pop()?;
+	match cond {
+	    Value::Bool(false) => Ok(()),
+	    Value::Bool(true)  => self.exec_callable(callable),
+	    illegal => Error::type_error("Bool", &format!("{:?}", illegal))
+	}
+    }
 
-	    // Hand control to the callable's code block
-	    self.exec_block(&callable.code)?;
+    // Conditional call, with default branch.
+    //
+    // Corresponds to if / elif ... else, and terminates an if-else
+    // chain.
+    fn call_if_else(&mut self) -> Result<()> {
+	let if_false = self.stack.pop()?;
+	let if_true = self.stack.pop()?;
+	match self.stack.pop()? {
+	    Value::Bool(true)  => self.exec_callable(if_true),
+	    Value::Bool(false) => self.exec_callable(if_false),
+	    illegal => Error::type_error("Bool", &format!("{:?}", illegal))
+	}
+    }
 
-	    // Call is done, remove the stack frame.
-	    let frame = self.call_stack.pop().expect("Call stack underflow");
+    // Hand control to the given callable.
+    //
+    // Factors out managing the call-stack for all variants of the
+    // call instruction.
+    //
+    // This works by recursively calling `exec_block()`, which in turn
+    // makes this interpreter recursive. We could avoid this by just
+    // keep track of the the current instruction, but for now I just
+    // want to keep things simple.
+    fn exec_callable(&mut self, callable: Value) -> Result<()> {
+	let (lambda, captures) = match callable {
+	    Value::Lambda(l) => Ok((l, self.stack.empty.clone())),
+	    Value::Closure(l, captures) => Ok((l, captures.clone())),
+	    _ => Error::not_callable(&callable)
+	}?;
+	
+	// Allocate the stack frame for this call.
+	self.stack.push_call_frame(&lambda, captures)?;
 
-	    // Contract stack to contain only the return value.
-	    let start = frame.locals;
-	    let depth = start + callable.rets as usize;
-	    while self.value_stack.len() > depth {
-		self.value_stack.remove(start);
-	    }
+	// Hand control to the callable's code block
+	self.exec_block(&lambda.code)?;
+
+	// Call is done, remove the stack frame.
+	if let Some(value) = self.stack.pop_frame()? {
+	    self.stack.push(value)
+	} else {
+	    Ok(())
+	}
+    }
+
+    // Try to index into the given collection.
+    fn index(&mut self, t: IndexType) -> Result<()> {
+	let index = self.stack.pop()?;
+	let collection = self.stack.pop()?;
+	match (&index, t) {
+	    (Value::List(_), IndexType::List) => (),
+	    (Value::Map(_), IndexType::Map) => (),
+	    (Value::Record(_), IndexType::Record) => (),
+	    (index, _) => {Error::type_error(index, t)?;}
+	};
+	self.stack.push(VMOps::index(&index, &collection)?)
+    }
+
+    // Check whether value matches a given type.
+    fn matches(&mut self, tt: TypeTag) -> Result<()> {
+	let value = self.stack.pop()?;
+	self.stack.push(Value::Bool(VMOps::matches(&value, tt)))
+    }    
+
+    // Try to convert one value into another.
+    fn coerce(&mut self, tt: TypeTag) -> Result<()> {
+	let value = self.stack.pop()?;
+	self.stack.push(VMOps::coerce(&value, tt)?)
+    }
+
+    // Error if value is not of expected type.
+    //
+    // Doesn't consume its argument if the check succeeds.
+    fn type_check(&self, tt: TypeTag) -> Result<()> {
+	let value = self.stack.peek(0)?;
+	if VMOps::matches(&value, tt) {
 	    Ok(())
 	} else {
-	    Error::not_callable(&callable)
+	    VMOps::type_mismatch(&value, tt)?;
+	    Ok(())
 	}
-    }
-
-    fn push(&mut self, value: &Value) -> Result<()> {
-	self.value_stack.push(value.clone());
-	Ok(())
-    }
-
-    fn pop(&mut self) -> Result<Value> {
-	if let Some(value) = self.value_stack.pop() {
-	    Ok(value)
-	} else {
-	    Error::stack_underflow()
-	}
-    }
-
-    fn peek(&self, rel: u8) -> Result<&Value> {
-	let len = self.value_stack.len();
-	if len > 0 {
-	    Ok(&self.value_stack[len - 1 - rel as usize])
-	} else {
-	    Error::stack_underflow()
-	}
-    }
-
-    fn abs(&self, pos: usize) -> Result<&Value> {
-	if pos < self.value_stack.len() {
-	    Ok(&self.value_stack[pos])
-	} else {
-	    Error::stack_underflow()
-	}
-    }
-
-    fn dup(&mut self, n: u8) -> Result<()> {
-	let top = self.peek(0)?.clone();
-	Ok(for _ in 0..n {
-	    self.push(&top)?;
-	})
-    }
-
-    fn drop(&mut self, n: u8) -> Result<()> {
-	Ok(for _ in 0..n {
-	    self.pop()?;
-	})
-    }
-
-    fn swap(&mut self, _: u8, _: u8) -> Result<()> {
-	Error::not_implemented("swap instruction")
     }
 }
