@@ -584,10 +584,10 @@ impl Compiler {
 	let index = self.scopes.try_insert(id, /* XXX */ Node::new(ast::TypeTag::Any))?;
 	// We need to place the expression representing the value of
 	// the binding onto the stack.
-	self.compile_expr(expr)?;
+	self.compile_expr(expr)
 	// Now we can emit the instruction which will consume the
 	// value and store it in the local stack frame.
-	self.emit(Instruction::Def(index))
+	// self.emit(Instruction::Def(index))
     }
 
     pub fn compile_typedef(&mut self, _id: &str, _expr: &TypeNode) -> Result<()> {
@@ -710,10 +710,10 @@ impl Compiler {
 	func: &ExprNode,
 	args: &[ExprNode]
     ) -> Result<()> {
-	self.compile_expr(func)?;
 	for arg in args {
 	    self.compile_expr(arg)?;
 	}
+	self.compile_expr(func)?;
 	self.emit(Instruction::Call(CallType::Always))
     }
 

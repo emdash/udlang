@@ -42,6 +42,10 @@ impl Error {
 	Err(Self::IllegalAddr(format!("Illegal Address: {:?}", addr)))
     }
 
+    pub fn not_callable<T>(value: &Value) -> Result<T> {
+	Err(Self::TypeError(format!("{:?} is not callable", value)))
+    }
+
     pub fn type_error<T: Debug, U>(expected: T, got: T) -> Result<U> {
 	Err(Self::TypeError(format!("Expected {:?}, got {:?}", expected, got)))
     }
@@ -69,6 +73,7 @@ where S: Iterator<Item = Value> {
 
 
 // Holds information needed to locate arguments on the stack.
+#[derive(Clone, Debug, PartialEq, Eq, Hash)]
 struct StackFrame {
     pub locals: usize,
     pub args: usize,
@@ -142,19 +147,21 @@ impl VM {
     pub fn init(&mut self) -> Result<()> {
 	// XXX: It really bothers me that we can't just borrow this.
 	let block = self.script.code[0].clone();
-	self.exec_block(&block)
+	// Push an empty stack frame
+	self.call_stack.push(StackFrame {
+	    locals: 0,
+	    args: 0xFF, /* XXX: do something useful here? */
+	    captures: Vec::new()
+	});
+	self.exec_block(&block);
+	self.call_stack.pop();
+	Ok(())
     }
 
     // Execute the main block in the script.
     pub fn main(&mut self, input: Value) -> Result<()> {
 	// XXX: It really bothers me that we can't just borrow this.
 	let block = self.script.code[1].clone();
-	self.input = Some(input);
-	self.exec_block(&block)
-    }
-
-    // Execute each instruction in the given block.
-    fn exec_block(&mut self, block: &[Instruction]) -> Result<()> {
 	// Push an empty stack frame
 	self.call_stack.push(StackFrame {
 	    locals: 0,
@@ -162,17 +169,28 @@ impl VM {
 	    captures: Vec::new()
 	});
 
+	self.input = Some(input);
+	self.exec_block(&block);
+	self.call_stack.expect("Call stack underflow");
+	Ok(())
+    }
+
+    // Execute each instruction in the given block.
+    fn exec_block(&mut self, block: &[Instruction]) -> Result<()> {
 	for insn in block {
 	    self.exec_insn(insn)?;
 	}
 
-	self.call_stack.pop();
+	self.call_stack.pop().expect("Call stack underflow");
 	Ok(())
     }
 
     // Execute the given instruction.
     fn exec_insn(&mut self, insn: &Instruction) -> Result<()> {
 	use Instruction::*;
+	println!("\n\nExec: {:?}", insn);
+	println!("Values: {:?}", self.value_stack);
+	println!("Calls: {:?}", self.call_stack);
 	match insn {
 	    Const(addr) => {
 		let x = &self.script.data[*addr as usize].clone();
@@ -182,7 +200,7 @@ impl VM {
 	    Def(_) => Ok(()) /* XXX: we don't need this instruction */,
 	    Un(_) => Error::not_implemented("Unary operator"),
 	    Bin(_) => Error::not_implemented("Binary operator"),
-	    Call(_) => Error::not_implemented("Function call"),
+	    Call(ct) => self.call(*ct),
 	    In => self.push(&self.input.clone().expect("No input record")),
 	    Out => {println!("{:?}", self.pop()?); Ok(())},
 	     /* XXX: should be stderr */
@@ -202,6 +220,7 @@ impl VM {
 	let value = {
 	    let top = self.call_stack.len() - 1;
 	    let frame = &self.call_stack[top];
+	    println!("{:?} {:?} {:?}", top, frame, pos);
 	    match binding {
 		Binding::Local => self.abs(frame.locals + pos as usize),
 		Binding::Arg => self.abs(frame.args + pos as usize),
@@ -209,6 +228,84 @@ impl VM {
 	    }
 	}?.clone(); /* XXX UGH THIS IS FINE! I HATE THE BORROW CHECKER!!! */
 	self.push(&value)
+    }
+
+    // Top level dispatch for function calls.
+    fn call(&mut self, call_type: CallType) -> Result<()> {
+	match call_type {
+	    CallType::Always    => {
+		let callable = self.pop()?;
+		self.exec_callable(call_type, callable)
+	    },
+	    CallType::If(true)  => self.call_if_true(),
+	    CallType::If(false) => self.call_if_false(),
+	    CallType::IfElse    => self.call_if_else(),
+	}	
+    }
+
+    // Conditional call, true case.
+    fn call_if_true(&mut self) -> Result<()> {
+	let callable = self.pop()?;
+
+	match self.pop()? {
+	    Value::Bool(true)  => self.exec_callable(CallType::If(true), callable),
+	    Value::Bool(false) => Ok(()),
+	    illegal => Error::type_error("Bool", &format!("{:?}", illegal))
+	}
+    }
+
+    // Conditional call, false case.
+    fn call_if_false(&mut self) -> Result<()> {
+	let callable = self.pop()?;
+	match self.pop()? {
+	    Value::Bool(true)  => Ok(()),
+	    Value::Bool(false) => self.exec_callable(CallType::If(true), callable),
+	    illegal => Error::type_error("Bool", &format!("{:?}", illegal))
+	}
+    }
+
+    // Conditional call, ternary case.
+    fn call_if_else(&mut self) -> Result<()> {
+	let if_false = self.pop()?;
+	let if_true = self.pop()?;
+	match self.pop()? {
+	    Value::Bool(true)  => self.exec_callable(CallType::IfElse, if_true),
+	    Value::Bool(false) => self.exec_callable(CallType::IfElse, if_false),
+	    illegal => Error::type_error("Bool", &format!("{:?}", illegal))
+	}
+    }
+
+    // Hand control to the given value if it is callable.
+    //
+    // This takes care of managing the call stack, so callers don't
+    // have to.
+    fn exec_callable(&mut self, ct: CallType, callable: Value) -> Result<()> {
+	if let Value::Lambda(callable) = callable {
+	    // Allocate the stack frame for this call, which may or may
+	    // not occur.
+	    self.call_stack.push(StackFrame::new(
+		ct,
+		&callable,
+		&self.value_stack,
+		&self.call_stack
+	    ));
+
+	    // Hand control to the callable's code block
+	    self.exec_block(&callable.code)?;
+
+	    // Call is done, remove the stack frame.
+	    let frame = self.call_stack.pop().expect("Call stack underflow");
+
+	    // Contract stack to contain only the return value.
+	    let start = frame.locals;
+	    let depth = start + callable.rets as usize;
+	    while self.value_stack.len() > depth {
+		self.value_stack.remove(start);
+	    }
+	    Ok(())
+	} else {
+	    Error::not_callable(&callable)
+	}
     }
 
     fn push(&mut self, value: &Value) -> Result<()> {
