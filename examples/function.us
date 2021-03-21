@@ -7,7 +7,7 @@ input  Int;
 output Int;
 
 func celcius_to_farenheit(c: Float) -> Float {
-     9.0 * c / 5.0 + 32
+     9.0 * c / 5.0 + 32.0
 }
 
 out celcius_to_farenheit(in);

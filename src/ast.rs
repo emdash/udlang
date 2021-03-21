@@ -1,3 +1,5 @@
+// (C) 2021 Brandon Lewis
+
 use std::collections::HashMap;
 use std::rc::Rc;
 use std::cell::RefCell;
@@ -108,7 +110,7 @@ pub type ExprNode = Node<Expr>;
 pub type TypeNode = Node<TypeTag>;
 pub type StmtNode = Node<Statement>;
 pub type MemberNode = Node<Member>;
-pub type Float = eq_float::F64;
+pub type Float = ordered_float::OrderedFloat<f64>;
 
 // *** ADT ********************************************************************
 
@@ -128,6 +130,7 @@ pub type Float = eq_float::F64;
 
 // Arithmetic and logic operations
 #[derive(Copy, Clone, Debug, PartialEq, Eq, Hash)]
+#[repr(u8)]
 pub enum BinOp {
     Add,
     Sub,
@@ -151,6 +154,7 @@ pub enum BinOp {
 
 
 #[derive(Copy, Clone, Debug, PartialEq, Eq, Hash)]
+#[repr(u8)]
 pub enum UnOp {
     Not,
     Neg,
@@ -246,7 +250,7 @@ pub enum Statement {
     Import(Import),
     Export(Export),
     ExprForEffect(ExprNode),
-    Emit(ExprNode),
+    Out(ExprNode),
     Def(String, ExprNode),
     TypeDef(String, TypeNode),
     ListIter(String, ExprNode, StmtNode),
@@ -643,8 +647,8 @@ impl Builder {
 	}
     }
 
-    pub fn emit(&self, expr: ExprNode) -> StmtNode {
-	self.statement(Statement::Emit(expr))
+    pub fn out(&self, expr: ExprNode) -> StmtNode {
+	self.statement(Statement::Out(expr))
     }
 
     pub fn def(&self, name: &str, expr: ExprNode) -> StmtNode {

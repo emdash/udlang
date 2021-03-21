@@ -1,3 +1,5 @@
+// (C) 2021 Brandon Lewis
+
 use std::env;
 
 use udlang::grammar;

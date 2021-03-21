@@ -346,7 +346,7 @@ impl TypeChecker {
             Statement::ExprForEffect(body) => {
                 self.is_void(body)?;
             },
-            Statement::Emit(_expr) =>
+            Statement::Out(_expr) =>
    	        /* XXX: expr must resolve to the declared output type */
 		Err(TypeError::NotImplemented)?,
             Statement::Def(name, val) => {
@@ -564,7 +564,7 @@ mod tests {
         let statement = Node::new(ast.list_iter(
             "i",
             ast.id("x"),
-            ast.emit(ast.list(&[ast.s("show_text"), ast.id("i")]))
+            ast.out(ast.list(&[ast.s("show_text"), ast.id("i")]))
         ));
 
         assert_eq!(tc.check_statement(&statement), Err(NotImplemented));
@@ -595,7 +595,7 @@ mod tests {
             "k",
             "v",
             ast.id("x"),
-            ast.emit(ast.list(&[ast.s("show_text"), ast.id("v")]))
+            ast.out(ast.list(&[ast.s("show_text"), ast.id("v")]))
         ));
 
         assert_eq!(tc.check_statement(&statement), Err(NotImplemented));
