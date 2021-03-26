@@ -85,6 +85,7 @@ impl Error {
 //
 // Use `try_push` when inserting a duplicate should be considered an
 // error.
+#[derive(Clone, Debug)]
 pub struct BiVec<T: Hash> {
     to_index: HashMap<T, usize>,
     from_index: Vec<T>
@@ -154,82 +155,80 @@ impl<T: Hash + Eq + Clone + Debug> BiVec<T> {
 /* ScopeChain datastructure **************************************************/
 
 
-// Provides a one-way association between a name and arbitrary value,
-// two-way association between names and numerical indices, and
-// facilities for collecting the results.
+// Helps with converting identifiers to the correct IR instructions.
 //
-// The AST uses strings as symbolic identifiers for variable
-// references. This IR is stack-based, and uses numerical
-// indexes.
+// For locals and arguments, we need to convert the name to an
+// an index relative to the stack depth at the call site.
 //
-// This data-structure helps perform this transformation by letting us
-// associate variable names to both an arbtirary value (type
-// information) *and* its numerical index in the output code.
-//
-// It models a "stack of stacks", where the inner stack is referred to
-// as a "scope". The interface presented is itself stack-based.
+// For captures, we need to convert the name to a capture index, and
+// we need to associate the name with a *capture path* so it can be
+// added to the lambda's capture list later.
 
 
-// A location on the stack for captures
+// Where to find a captured value on the stack.
+//
+// It must be a local variable in some parent scope.
 #[derive(Copy, Clone, Debug, PartialEq, Eq, Hash)]
 pub struct CapturePath {
-    pub frame: u8,
+    pub scope: u8,
     pub index: u8,
 }
 
-// XXX:
-//
-// ScopeChain needs to be a stack of Scope, Where Scope is
-//
-// struct Scope {
-//   arguments: BiVec<String>
-//   locals: BiVec<String>
-//   values: HashMap<String, T>
-// }
-//
-// ArgType is just Local or Capture.
-// Arg and Locals share same index space.
-//
-// We need to eliminate the "double scope push" in the compiler, since our
-// scope indices will be off.
-//
-// 
-
-pub struct ScopeChain<T> {
-    scopes: Vec<(BiVec<String>, HashMap<String, T>)>
+#[derive(Debug)]
+struct Scope {
+    pub locals: BiVec<String>,
+    pub captures: BiVec<String>,
+    pub capture_list: Vec<CapturePath>
 }
 
-impl<T: Clone + Debug> ScopeChain<T> {
+
+impl Scope {
+    pub fn new() -> Scope {
+	let locals = BiVec::new();
+	let captures = BiVec::new();
+	let capture_list = Vec::new();
+	Scope {locals, captures, capture_list}
+    }
+}
+
+
+#[derive(Debug)]
+struct ScopeChain {
+    scopes: Vec<Scope>
+}
+
+
+impl ScopeChain {
     // Create a new scope chain.
-    pub fn new() -> ScopeChain<T> {
+    pub fn new() -> ScopeChain {
 	ScopeChain {
 	    scopes: Vec::new()
 	}
     }
 
     // Return a reference to the current scope.
-    pub fn top(&self) -> &(BiVec<String>, HashMap<String, T>) {
+    pub fn top(&self) -> &Scope {
 	&self.scopes[self.scopes.len() - 1]
     }
-
+    
     // Return a mutable reference to the current scope.
-    pub fn top_mut(&mut self) -> &mut (BiVec<String>, HashMap<String, T>) {
+    pub fn top_mut(&mut self) -> &mut Scope {
 	let len = self.scopes.len() - 1;
 	&mut self.scopes[len]
     }
 
     // Allocate a new scope.
-    pub fn push(&mut self) -> Result<()> {
+    pub fn push_scope(&mut self) -> Result<()> {
 	if self.scopes.len() < 256 {
-	    self.scopes.push((BiVec::new(), HashMap::new()));
+	    self.scopes.push(Scope::new());
 	    Ok(())
 	} else {
-	    Error::too_many_arguments()
+	    Error::not_implemented("> 256 nested scopes")
 	}
     }
 
     // Remove and return the current scope.
-    pub fn pop(&mut self) -> Result<(BiVec<String>, HashMap<String, T>)> {
+    pub fn pop_scope(&mut self) -> Result<Scope> {
 	if let Some(scope) = self.scopes.pop() {
 	    Ok(scope)
 	} else {
@@ -237,98 +236,70 @@ impl<T: Clone + Debug> ScopeChain<T> {
 	}
     }
 
-    // Pop the current scope into an ordered list of values.
-    pub fn pop_values(&mut self) -> Result<Vec<T>> {
-	let (names, mut values) = self.pop()?;
-	Ok(
-	    names
-		.into_vec()
-		.into_iter()
-		.map(|name| values.remove(&name).expect("corrupted scope chain"))
-		.collect()
-	)
-    }
-
-    // Pop the current scope into a hashmap from name => value.
-    pub fn pop_value_map(&mut self) -> Result<Vec<(String, T)>> {
-	let (_, values) = self.pop()?;
-	Ok(values.into_iter().collect())
-    }
-    
-
-    // Add an item, if doesn't already exist, and return the index in
-    // the current scope.
+    // Add a new entry to the current scope.
     //
-    // This item will always be inserted into the top scope, shadowing
-    // any with the same name in parent scopes.
+    // This fails if the entry is already present in the current scope.
     //
-    // This can fail if the index overflows the 8-bit argument limit.
+    // This can also fail if the index overflows the 8-bit argument limit.
     // XXX: argument indices should probably be at least a type alias,
     // in case we decide we need more than 256 arguments.
-    pub fn insert(&mut self, id: &str, value: T) -> Result<u8> {
-	// XXX: This could probably be optimized. For now it doesn't
-	// matter.
-	match self.try_insert(id, value) {
-	    Ok(index) => Ok(index),
-	    Err(Error::Duplicate(_)) => Ok(self.get_path(id)?.index),
-	    err => err
-	}
-    }
+    pub fn define(&mut self, id: &str) -> Result<u8> {
+	let scope = self.top_mut();
 
-    // Like insert, but will error if the key already exists.
-    pub fn try_insert(&mut self, id: &str, value: T) -> Result<u8> {
-	let (indices, values) = self.top_mut();
+	eprintln!("define {:?}", id);
 
-	println!("{:?} {:?}", id, value);
-
-	if indices.len() <= 256 {
-	    let index = indices.try_push(id.to_string())?;
-	    values.insert(id.to_string(), value);
+	if scope.locals.len() <= 256 {
+	    let index = scope.locals.try_push(id.to_string())?;
 	    Ok(index as u8)
 	} else {
 	    Error::too_many_arguments()
 	}
     }
 
+    // Get the appropriate load instruction for the given identifier.
+    pub fn compile_id(&mut self, id: &str) -> Result<Instruction> {
+
+	eprintln!("id {:?}", self.scopes);
+	
+	if let Ok(index) = self.top().locals.index(&id.to_string()) {
+	    Ok(Instruction::Load(LoadSrc::Local, index as u8))
+	} else {
+	    Ok(Instruction::Load(LoadSrc::Capture, self.find_capture(id)?))
+	}
+    }
+
     // Get the path of `id`, wherever it happens to be in the scope chain.
-    pub fn get_path(&self, id: &str) -> Result<CapturePath> {
+    pub fn find_capture(&mut self, id: &str) -> Result<u8> {
 	// XXX: slightly annoying to have to make a copy for a look-up
 	// it's due to BiVec being generic over T, and not specialized
 	// for `String` / borrowing.
 	let id = id.to_string();
 
-	for (scope, (indices, values)) in self.scopes.iter().rev().enumerate() {
-	    if values.contains_key(&id) {
-		return Ok(CapturePath {
-		    frame: scope as u8,
-		    index: indices.index(&id.to_string())? as u8,
-		})
+	if let Ok(index) = self.top().captures.index(&id) {
+	    // If there is an entry in our current set of captures, just
+	    // return it.
+	    return Ok(index as u8);
+	} else {
+	    // Otherwise, we need to find the scope which does define our id.
+	    for (scope_index, scope) in self.scopes.iter().rev().enumerate() {
+		if let Ok(arg) = scope.locals.index(&id) {
+		    // And now that we've found it, add this path to our capture
+		    // list.
+		    let index = self.top().capture_list.len() as u8;
+		    self.top_mut().capture_list.push(CapturePath {
+			scope: scope_index as u8,
+			index: arg as u8
+		    });
+		    // And also add an entry in the local scope, so
+		    // future lookups will find the entry we just
+		    // created.
+		    self.top_mut().captures.try_push(id)?;
+		    return Ok(index);
+		}
 	    }
 	}
 
 	Error::not_found(id)
-    }
-
-    // Try to find the value associated with `id` in this scope chain.
-    pub fn get(&self, id: &str) -> Result<T> {
-	// XXX: slightly annoying to have to make a copy for a look-up
-	// it's due to BiVec being generic over T, and not specialized
-	// for `String` / borrowing.
-	let id = id.to_string();
-
-	for (_, values) in self.scopes.iter().rev() {
-	    if let Some(value) = values.get(&id) {
-		return Ok(value.clone());
-	    }
-	}
-
-	Error::not_found(id)
-    }
-
-    // Get the current length of the current scope
-    pub fn len(&self) -> Result<u8> {
-	// XXX: top and top_mut() should take return a result.
-	Ok(self.top().0.len() as u8)
     }
 }
 
@@ -363,7 +334,7 @@ pub type Addr = u16;
 #[derive(Copy, Clone, Debug, PartialEq, Eq, Hash)]
 pub enum Instruction {
     Const(Addr),        // Load a value from the const table.
-    Load(ArgType, u8),  // Load a local variable, argument, or catpure.
+    Load(LoadSrc, u8),  // Load a local variable, argument, or catpure.
     Store(u8),          // Store a value as a local variable.
     Un(UnOp),           // Wraps all unary arithmetic and logic operations.
     Bin(BinOp),         // Wraps all binary arithmetic and logic operations.
@@ -417,11 +388,13 @@ pub enum IndexType {
 // There is a single Load instruction for loading data onto the stack.
 // This enum specifies the different address spaces from which we can load
 // values.
+//
+// For now we distinguish between two sources: arguments / locals, and
+// closure captures.
 #[derive(Copy, Clone, Debug, PartialEq, Eq, Hash)]
 #[repr(u8)]
-pub enum ArgType {
+pub enum LoadSrc {
     Local,
-    Arg,
     Capture
 }
 
@@ -911,8 +884,7 @@ pub trait Operations {
 pub struct Compiler {
     data: BiVec<Value>,
     blocks: Vec<Block>,
-    scopes: ScopeChain<ArgType>,
-    captures: ScopeChain<CapturePath>,
+    scopes: ScopeChain,
 }
 
 
@@ -923,12 +895,14 @@ impl Compiler {
 	    data: BiVec::new(),
 	    blocks: Vec::new(),
 	    scopes: ScopeChain::new(),
-	    captures: ScopeChain::new()
 	}
     }
 
     // Try to convert the AST to IR.
     pub fn compile_program(&mut self, prog: Program) -> Result<IR> {
+	
+	eprintln!("compile program");
+
 	Ok(match prog {
 	    Program::Script {desc, decls, input, output, body}
 	    => IR::Executable(self.compile_script(desc, decls, input, output, body)?),
@@ -946,7 +920,10 @@ impl Compiler {
 	output: TypeNode,
 	body: Seq<Shared<Statement>>
     ) -> Result<Executable> {
-	self.scopes.push()?;
+	
+	eprintln!("compile script");
+
+	self.scopes.push_scope()?;
 
 	self.blocks.push(Block::new());
 	for d in decls {
@@ -958,7 +935,7 @@ impl Compiler {
 	    self.compile_statement(&statement)?;
 	}
 
-	self.scopes.pop()?;
+	self.scopes.pop_scope()?;
 
 	Ok(Executable {
 	    desc,
@@ -973,19 +950,27 @@ impl Compiler {
     pub fn compile_library(
 	&mut self,
 	desc: String,
-	decls: Vec<StmtNode>
+	_decls: Vec<StmtNode>
     ) -> Result<Module> {
-	self.scopes.push()?;
+	
+	eprintln!("compile library");
+
+	/* 
+	self.scopes.push_scope()?;
 	for d in decls {
 	    self.compile_statement(&d)?;
 	}
-	let _ = self.scopes.pop_value_map()?;
+	let _ = self.scopes.pop_capture_list()?;
+	 */
 	Ok(Module {desc, exports: Vec::new()})
     }
 
     // Try to compile a statement into IR.
     pub fn compile_statement(&mut self, statement: &StmtNode) -> Result<()> {
 	use ast::Statement::*;
+		
+	eprintln!("compile statement: {:?}", statement);
+
 	match statement.deref() {
 	   Import(_)           => Error::not_implemented("module imports"),
 	   Export(_)           => Error::not_implemented("module exports"),
@@ -1003,11 +988,17 @@ impl Compiler {
 
     // Compile a statement which just invokes an expression for its effects.
     pub fn compile_expr_for_effect(&mut self, expr: &ExprNode) -> Result<()> {
+		
+	eprintln!("compile expr_for_effect");
+
 	self.compile_expr(expr)
     }
 
     // Try to compile an ouptut instruction.
     pub fn compile_out(&mut self, expr: &ExprNode) -> Result<()> {
+		
+	eprintln!("compile out {:?}", expr);
+
 	self.compile_expr(expr)?;
 	self.emit(Instruction::Out)
     }
@@ -1017,6 +1008,9 @@ impl Compiler {
     // AKA "let", "func", "proc". There are several syntactic forms
     // which result in a Def() node being inserted.
     pub fn compile_def(&mut self, id: &str, expr: &ExprNode) -> Result<()> {
+		
+	eprintln!("compile def {:?}", id);
+
 	// We need to convert the local name to an argument index.
 	//
 	// Do this first so that recursive function calls can at least
@@ -1024,7 +1018,7 @@ impl Compiler {
 	//
 	// Duplicate definitions are an error, so we use try_insert
 	// rather than insert.
-	let index = self.scopes.try_insert(id, ArgType::Local)?;
+	let index = self.scopes.define(id)?;
 
 	// We need to place the expression representing the value of
 	// the binding onto the stack.
@@ -1044,6 +1038,8 @@ impl Compiler {
     // Dispatch to each expression variant.
     pub fn compile_expr(&mut self, expr: &ExprNode) -> Result<()> {
 	use ast::Expr::*;
+
+	eprintln!("compile expr {:?}", expr);
 
 	// Do NOT include a wildcard match in this block, it breaks
 	// exhaustivity analysis.
@@ -1094,9 +1090,15 @@ impl Compiler {
 	conds: &[(ExprNode, ExprNode)],
 	default: &ExprNode
     ) -> Result<()> {
+
+	eprintln!("compile conds");
+
 	// Compile the if, elif blocks as (cond) (block) Call(If)
 	let last = conds.len() - 1;
 	for (cond, action) in conds[..last].iter() {
+
+	    eprintln!("compile if/elif: {:?}, {:?}", cond, action);
+
 	    self.compile_expr(cond)?;
 	    self.compile_basic_block(action)?;
 	    self.emit(Instruction::Call(CallType::If))?;
@@ -1104,6 +1106,9 @@ impl Compiler {
 
 	// Compile the Last item as (Cond) (block) (block) Call(IfElse)
 	let (cond, action) = &conds[last];
+
+	eprintln!("compile else: {:?}, {:?}", cond, action);
+
 	self.compile_expr(cond)?;
 	self.compile_basic_block(action)?;
 	self.compile_basic_block(default)?;
@@ -1117,6 +1122,9 @@ impl Compiler {
 	l: &ExprNode,
 	r: &ExprNode
     ) -> Result<()> {
+
+	eprintln!("compile bin: {:?} {:?}, {:?}", op, l, r);
+
 	self.compile_expr(l)?;
 	self.compile_expr(r)?;
 	self.emit(Instruction::Bin(op))
@@ -1124,6 +1132,9 @@ impl Compiler {
 
     // Try to compile a unary operator.
     pub fn compile_un(&mut self, op: UnOp, operand: &ExprNode) -> Result<()> {
+
+	eprintln!("compile bin: {:?}, {:?}", op, operand);
+
 	self.compile_expr(operand)?;
 	self.emit(Instruction::Un(op))
     }
@@ -1138,6 +1149,9 @@ impl Compiler {
 	func: &ExprNode,
 	args: &[ExprNode]
     ) -> Result<()> {
+
+	eprintln!("compile call: {:?}, {:?}", func, args);
+
 	for arg in args {
 	    self.compile_expr(arg)?;
 	}
@@ -1155,6 +1169,9 @@ impl Compiler {
 	&mut self,
 	expr: &ExprNode
     ) -> Result<()> {
+
+	eprintln!("compile block expr: {:?}", expr);
+
 	self.compile_basic_block(expr)?;
 	self.emit(Instruction::Call(CallType::Always))
     }
@@ -1163,10 +1180,7 @@ impl Compiler {
     //
     // These are used as the targets of control flow instructions.
     pub fn compile_basic_block(&mut self, body: &ExprNode) -> Result<()> {
-	match body.deref() {
-	    Expr::Block(_, _) => Ok(()),
-	    _ => Error::internal("not a block!")
-	}?;
+	eprintln!("compile basic block: {:#?}", body);
 	self.compile_lambda(&[], /* XXX */ &Node::new(ast::TypeTag::Any), body)
     }
 
@@ -1177,16 +1191,16 @@ impl Compiler {
 	ret: &TypeNode,
 	body: &ExprNode
     ) -> Result<()> {
+
+	eprintln!("compile lambda block: {:?}, {:?}, {:?}", args, ret, body);
+
 	// First we put the formal parameters, if any, into scope.
-	self.scopes.push()?;
+	self.scopes.push_scope()?;
 	for (id, _) in args {
 	    // Duplicate parameter names would be an error, hence
 	    // try_insert.
-	    self.scopes.try_insert(id, ArgType::Arg)?;
+	    self.scopes.define(id)?;
 	}
-
-	// Push the capture scope.
-	self.captures.push()?;
 
 	// Create a code block to hold the lambda's code.
 	self.blocks.push(Block::new());
@@ -1212,11 +1226,11 @@ impl Compiler {
 	};
 
 	// Pop our code and capture list off their respective stacks.
+	let scope = self.scopes.pop_scope()?;
 	let code = self.blocks.pop().expect("Block stack underflow");
-	let captures = self.captures.pop_values()?;
-	let locals = self.scopes.pop()?.0.len() as u8;
 	let args = args.len() as u8;
-
+	let locals = (scope.locals.len() as u8 - args) as u8;
+	let captures = scope.capture_list;
 	let rets = match ret.deref() {
 	    ast::TypeTag::Void => 0,
 	    // XXX: may need to multiple return values at some point,
@@ -1238,28 +1252,8 @@ impl Compiler {
 
     // Compile a variable reference to a load instruction.
     pub fn compile_variable_reference(&mut self, id: &str) -> Result<()> {
-	let path = self.scopes.get_path(id)?;
-
-	match (path.frame, path.index) {
-	    (0, index) => self.emit(Instruction::Load(ArgType::Local, index)),
-	    (1, index) => self.emit(Instruction::Load(ArgType::Arg, index)),
-	    _ => {
-		// Captures need special handling.
-		//
-		// The positional index of the argument at runtime is
-		// its index in the capture list, not its path in the
-		// lexical scope chain.
-		//
-		// The paths are used at runtime when the lambda is
-		// placed on the stack.
-		//
-		// The capture may or may not already be defined,
-		// which is fine -- captures appear more than once --
-		// so we use insert, rather than try_insert.
-		let position = self.captures.insert(id, path)?;
-		self.emit(Instruction::Load(ArgType::Capture, position))
-	    }
-	}
+	let insn = self.scopes.compile_id(id)?;
+	self.emit(insn)
     }
 
     // Emit an instruction to the output.

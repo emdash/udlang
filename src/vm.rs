@@ -8,7 +8,7 @@ use crate::ast::{
 use crate::ir::{
     Addr,
     // AList,
-    ArgType,
+    LoadSrc,
     CallType,
     CapturePath,
     Executable,
@@ -161,9 +161,10 @@ impl Stack {
 	    Error::not_implemented("Multiple Return Values")
 	} else {
 	    let top = self.top_frame()?;
-	    let start = top.values.len() - lambda.args as usize - 1;
+	    let start = top.values.len() - lambda.args as usize;
 	    let values = top.values[start..].to_vec();
 	    let args = values.len() as u8;
+	    eprintln!("Push Call Frame: {:#?}", values);
 	    self.frames.push(StackFrame {
 		// XXX: the .to_vec here tells me I should go back to a
 		// mono-stack design, but use the separate frame stack as
@@ -181,7 +182,7 @@ impl Stack {
 
     pub fn push_entrypoint_frame(&mut self) -> Result<()> {
 	self.frames.push(StackFrame {
-	    values: Vec::new(),
+	    values: vec![Value::None],
 	    args: 0,
 	    captures: self.empty.clone(),
 	    returns_value: false
@@ -242,12 +243,13 @@ impl Stack {
     }
 
     fn capture_paths(&self, captures: &[CapturePath]) -> Shared<Seq<Value>>{
+	eprintln!("capture paths");
 	// Lambdas capture their closure values.
 	Shared::new(
 	    captures
 		.iter()
 		.map(|path| {
-		    let frame = path.frame as usize;
+		    let frame = self.frames.len() - path.scope as usize;
 		    let index = path.index as usize;
 		    self.frames[frame].values[index].clone()
 		})
@@ -333,6 +335,7 @@ impl VM {
 	&mut self,
 	input: S,
     ) -> Result<()> {
+	eprintln!("Run");
 	self.init()?;
 	Ok(for value in input {
 	    self.main(value)?;
@@ -341,6 +344,7 @@ impl VM {
 
     // Execute the init block in the script.
     pub fn init(&mut self) -> Result<()> {
+	eprintln!("Init");
 	// XXX: It really bothers me that we can't just borrow this.
 	let block = self.script.code[0].clone();
 	self.stack.push_entrypoint_frame()?;
@@ -351,6 +355,8 @@ impl VM {
 
     // Execute the main block in the script.
     pub fn main(&mut self, input: Value) -> Result<()> {
+	eprintln!("Main");
+	self.stack.push_entrypoint_frame()?;
 	// XXX: It really bothers me that we can't just borrow this.
 	let block = self.script.code[1].clone();
 	self.input = input;
@@ -370,8 +376,7 @@ impl VM {
     // Dispatch over all instructions.
     fn exec_insn(&mut self, insn: &Instruction) -> Result<()> {
 	use Instruction::*;
-	println!("\n\nExec: {:?}", insn);
-	println!("Stack {:?}", self.stack);
+	eprintln!("\n\nExec: {:#?}", insn);
 	match insn {
 	    Const(addr)       => self.load_const(*addr),
 	    Load(arg_type, x) => self.load_arg(*arg_type, *x),
@@ -382,9 +387,9 @@ impl VM {
 	    
 	    In                => self.stack.push(self.input.clone()),
 
-	    Out               => {println!("{:?}", self.stack.pop()?); Ok(())},
+	    Out               => {eprintln!("{:#?}", self.stack.pop()?); Ok(())},
 	     /* XXX: should print to stderr */
-	    Debug             => {println!("{:?}", self.stack.peek(0)?); Ok(())},
+	    Debug             => {eprintln!("{:#?}", self.stack.peek(0)?); Ok(())},
 	    Drop(_)           => Error::not_implemented("Drop"),
 	    Dup(_)            => Error::not_implemented("Dup"),
 	    Swap(_, _)        => Error::not_implemented("Swap"),
@@ -394,7 +399,9 @@ impl VM {
 	    Coerce(t)         => self.coerce(*t),
 	    TypeCheck(t)      => self.type_check(*t),
 	    Trap(trap_type)   => Error::trap(*trap_type, self.stack.pop()?)
-	}
+	}?;
+	eprintln!("Stack {:#?}", self.stack.frames);
+	Ok(())
     }
 
     // Load values from the data section of the script.
@@ -403,10 +410,12 @@ impl VM {
     // so this is not quite as trivial as it seems.
     fn load_const(&mut self, addr: Addr) -> Result<()> {
 	let const_value = self.script.data[addr as usize].clone();
+	eprintln!("Load {:#?} {:#?}", addr, const_value);
 	let runtime_value = match const_value {
 	    // Lambdas need to be converted to closures at this time
 	    // if they capture stack values.
 	    Value::Lambda(l) if l.captures.len() > 0 => {
+		eprintln!("has captures");
 		let captures = self.stack.capture_paths(&l.captures);
 		Value::Closure(l, captures)
 	    },
@@ -416,14 +425,13 @@ impl VM {
     }
 
     // Copy an argument or captured value to the top of stack.
-    fn load_arg(&mut self, arg_type: ArgType, pos: u8) -> Result<()> {
+    fn load_arg(&mut self, src: LoadSrc, pos: u8) -> Result<()> {
 	let frame = self.stack.top_frame()?;
-	let localindex = frame.args as usize + pos as usize;
-	let value = match arg_type {
-	    ArgType::Local => frame.values[localindex].clone(),
-	    ArgType::Arg => frame.values[pos as usize].clone(),
-	    ArgType::Capture => frame.captures[pos as usize].clone()
+	let value = match src {
+	    LoadSrc::Local => frame.values[pos as usize].clone(),
+	    LoadSrc::Capture => frame.captures[pos as usize].clone()
 	};
+	eprintln!("Load {:#?} {:#?} {:?}", src, pos, value);
 	self.stack.push(value)
     }
 
@@ -475,7 +483,7 @@ impl VM {
 	match cond {
 	    Value::Bool(false) => Ok(()),
 	    Value::Bool(true)  => self.exec_callable(callable),
-	    illegal => Error::type_error("Bool", &format!("{:?}", illegal))
+	    illegal => Error::type_error("Bool", &format!("{:#?}", illegal))
 	}
     }
 
@@ -489,7 +497,7 @@ impl VM {
 	match self.stack.pop()? {
 	    Value::Bool(true)  => self.exec_callable(if_true),
 	    Value::Bool(false) => self.exec_callable(if_false),
-	    illegal => Error::type_error("Bool", &format!("{:?}", illegal))
+	    illegal => Error::type_error("Bool", &format!("{:#?}", illegal))
 	}
     }
 
