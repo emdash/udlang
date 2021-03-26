@@ -440,7 +440,7 @@ impl VM {
 	let pos = pos as usize;
 	let value = self.stack.pop()?;
 	let frame = self.stack.top_frame_mut()?;
-	if pos < frame.values.len() {
+	if pos <= frame.values.len() {
 	    frame.values[pos + frame.args as usize] = value;
 	    Ok(())
 	} else {
