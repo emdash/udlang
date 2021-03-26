@@ -118,9 +118,10 @@ where S: Iterator<Item = Value> {
 // Rather th
 #[derive(Clone, Debug, PartialEq, Eq, Hash)]
 struct StackFrame {
+    pub block: Shared<Block>,
     pub args: u8,
     pub values: Vec<Value>,
-    pub captures: Shared<Seq<Value>>,
+    //pub captures: Shared<Seq<Value>>,
     pub returns_value: bool
 }
 
@@ -158,16 +159,17 @@ impl Stack {
 	    for (i, val) in frame.values.iter().enumerate() {
 		eprintln!("{} {:?}", i, val);
 	    }
+	    /*
 	    eprintln!("-- Frame {} Captures --\n", i);
 	    for (i, val) in frame.captures.iter().enumerate() {
 		eprintln!("{} {:?}", i, val);
-	    }
+	    }*/
 	}
     }
 
     pub fn push_entrypoint_frame(
 	&mut self,
-	block: &Block
+	block: Shared<Block>
     ) -> Result<()> {
 	if block.rets != 0 {
 	    Error::not_implemented("Return from top level")
@@ -180,13 +182,14 @@ impl Stack {
 		values.push(Value::None);
 	    }
 	    self.frames.push(StackFrame {
+		block: block,
 		// XXX: the .to_vec here tells me I should go back to a
 		// mono-stack design, but use the separate frame stack as
 		// *view* into the mono-stack, which is what I had
 		// intended all along, but I got bogged down in the
 		// details.
 		values: values,
-		captures: Shared::new(Vec::new()),
+		//captures: Shared::new(Vec::new()),
 		args: 0,
 		returns_value: false
 	    });
@@ -198,32 +201,33 @@ impl Stack {
     // Push a new stack frame for the call that is about to occur.
     pub fn push_call_frame(
 	&mut self,
-	lambda: &Block,
-	captures: Shared<Seq<Value>>
+	block: Shared<Block>
     ) -> Result<()> {
-	if lambda.rets > 1 {
+	if block.rets > 1 {
 	    Error::not_implemented("Multiple Return Values")
 	} else {
 	    let top = self.top_frame_mut()?;
-	    let start = top.values.len() - lambda.args as usize;
+	    let start = top.values.len() - block.args as usize;
 	    // The top of stack contains the actual arguments, so we
 	    // can just split this off into a new vector.
 	    let mut values = top.values.split_off(start);
 	    let args = values.len() as u8;
 	    // reserve stack space for locals
-	    for _ in 0..lambda.locals {
+	    for _ in 0..block.locals {
 		values.push(Value::None);
 	    }
+	    let rets = block.rets == 1;
 	    self.frames.push(StackFrame {
+		block: block,
 		// XXX: the .to_vec here tells me I should go back to a
 		// mono-stack design, but use the separate frame stack as
 		// *view* into the mono-stack, which is what I had
 		// intended all along, but I got bogged down in the
 		// details.
 		values: values,
-		captures: captures,
+		//captures: captures,
 		args: args,
-		returns_value: lambda.rets == 1
+		returns_value: rets
 	    });
 	    Ok(())
 	}
@@ -281,18 +285,14 @@ impl Stack {
 	}
     }
 
-    fn capture_paths(&self, captures: &[CapturePath]) -> Shared<Seq<Value>>{
-	// Blocks capture their closure values.
-	Shared::new(
-	    captures
-		.iter()
-		.map(|path| {
-		    let frame = self.frames.len() - path.scope as usize;
-		    let index = path.index as usize;
-		    self.frames[frame].values[index].clone()
-		})
-		.collect()
-	)
+    fn get_capture(&self, pos: u8) -> Result<Value> {
+	let top = self.top_frame()?;
+	let path = top.block.captures[pos as usize];
+	let frame = self.frames.len() - path.scope as usize - 1;
+	eprintln!("pos: {} frame: {} path: {:?} len: {}", pos, frame, path, self.frames.len());
+	let index = path.index as usize;
+	let frame = &self.frames[frame];
+	Ok(frame.values[index].clone())
     }
 }
 
@@ -383,9 +383,8 @@ impl VM {
     // Execute the init block in the script.
     pub fn init(&mut self) -> Result<()> {
 	eprintln!("Init");
-	// XXX: It really bothers me that we can't just borrow this.
-	let block = self.script.code[0].clone();
-	self.stack.push_entrypoint_frame(&block)?;
+	let block = Shared::new(self.script.code[0].clone());
+	self.stack.push_entrypoint_frame(block.clone())?;
 	self.exec_block(&block.code)?;
 	// We DON'T want to pop this frame, as main executes as a
 	// closure inside it.
@@ -396,9 +395,8 @@ impl VM {
     pub fn main(&mut self, input: Value) -> Result<()> {
 	eprintln!("Main");
 	// XXX: It really bothers me that we can't just borrow this.
-	let block = self.script.code[1].clone();
-	let captures = self.stack.capture_paths(&block.captures);
-	self.stack.push_call_frame(&block, captures)?;
+	let block = Shared::new(self.script.code[1].clone());
+	self.stack.push_call_frame(block.clone())?;
 	self.input = input;
 	self.exec_block(&block.code)?;
 	self.stack.pop_frame()?;
@@ -449,20 +447,16 @@ impl VM {
     // so this is not quite as trivial as it seems.
     fn load_const(&mut self, addr: Addr) -> Result<()> {
 	let const_value = self.script.data[addr as usize].clone();
-	let runtime_value = match const_value {
-	    // Blocks need to be converted to closures at this time
-	    // if they capture stack values.
-	    //
-	    // Actually this only needs to happen if they escape the
-	    // stack frame in which they are defined, but it is
-	    // simpler to just do this for all of them.
-	    Value::Lambda(l) if l.captures.len() > 0 => {
-		let captures = self.stack.capture_paths(&l.captures);
-		Value::Closure(l, captures)
-	    },
-	    other => other
-	};
-	self.stack.push(runtime_value)
+
+	// XXX: what we need here is to translate lambda relative
+	// capture paths in to absolute capture paths. this way we can
+	// defer lookup, which is needed for recursive functions, but
+	// we still get the right stack position. it's a lot more
+	// complicated than I would like, and makes me wonder if this
+	// scheme is worth it at this point. It'd be a lot easier to
+	// work with a scope chain that simply took values by name.
+	
+	self.stack.push(const_value)
     }
 
     // Copy an argument or captured value to the top of stack.
@@ -470,7 +464,7 @@ impl VM {
 	let frame = self.stack.top_frame()?;
 	let value = match src {
 	    LoadSrc::Local => frame.values[pos as usize].clone(),
-	    LoadSrc::Capture => frame.captures[pos as usize].clone()
+	    LoadSrc::Capture => self.stack.get_capture(pos)?,
 	};
 	eprintln!("Load {:#?} {:#?} {:?}", src, pos, value);
 	self.stack.push(value)
@@ -552,16 +546,17 @@ impl VM {
     // keep track of the the current instruction, but for now I just
     // want to keep things simple.
     fn exec_callable(&mut self, callable: Value) -> Result<()> {
-	let (lambda, captures) = match callable {
-	    Value::Lambda(l) => Ok((l, self.stack.empty.clone())),
-	    Value::Closure(l, captures) => Ok((l, captures.clone())),
+	let (block, _) = match callable {
+	    Value::Lambda(b) => Ok((b, self.stack.empty.clone())),
+	    Value::Closure(b, captures) => Ok((b, captures.clone())),
 	    _ => Error::not_callable(&callable)
 	}?;
+
 	// Allocate the stack frame for this call.
-	self.stack.push_call_frame(&lambda, captures)?;
+	self.stack.push_call_frame(block.clone())?;
 
 	// Hand control to the callable's code block
-	self.exec_block(&lambda.code)?;
+	self.exec_block(&block.code)?;
 
 	// Call is done, remove the stack frame.
 	if let Some(value) = self.stack.pop_frame()? {
