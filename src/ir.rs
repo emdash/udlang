@@ -85,10 +85,16 @@ impl Error {
 //
 // Use `try_push` when inserting a duplicate should be considered an
 // error.
-#[derive(Clone, Debug)]
-pub struct BiVec<T: Hash> {
+pub struct BiVec<T: Hash + Clone + Debug> {
     to_index: HashMap<T, usize>,
     from_index: Vec<T>
+}
+
+
+impl<T: Hash + Clone + Debug> std::fmt::Debug for BiVec<T> {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+	f.debug_list().entries(self.from_index.iter()).finish()
+    }
 }
 
 
@@ -190,7 +196,6 @@ impl Scope {
 	Scope {locals, captures, capture_list}
     }
 }
-
 
 #[derive(Debug)]
 struct ScopeChain {
@@ -408,12 +413,6 @@ pub enum TrapType {
 }
 
 
-// A linear sequence of instructions.
-//
-// The block is the basic unit of control flow.
-pub type Block = Vec<Instruction>;
-
-
 /* IR Values *****************************************************************/
 
 
@@ -440,8 +439,8 @@ pub enum Value {
     Str(String),
     // Values below are heavy-weight enough to be boxed.
     Point(Shared<Point>),
-    Lambda(Shared<Lambda>),
-    Closure(Shared<Lambda>, Shared<Seq<Value>>),
+    Lambda(Shared<Block>),
+    Closure(Shared<Block>, Shared<Seq<Value>>),
     Tuple(Shared<Seq<Value>>),
     List(Shared<Seq<Value>>),
     Map(Shared<Map<Value>>),
@@ -493,9 +492,9 @@ pub struct Record {
 #[derive(Clone, Debug, PartialEq, Eq, Hash)]
 pub enum Member {
     Field(Shared<TypeTag>),
-    Method(Shared<Lambda>),
+    Method(Shared<Block>),
     StaticValue(Value),
-    StaticMethod(Shared<Lambda>)
+    StaticMethod(Shared<Block>)
 }
 
 
@@ -526,33 +525,12 @@ pub type Point = (Float, Float);
 // values, and the *capture* list, which may be empty, in case the
 // function happens to be a closure.
 #[derive(Clone, Debug, PartialEq, Eq, Hash)]
-pub struct Lambda {
-    pub code: Block,
+pub struct Block {
+    pub code: Vec<Instruction>,
     pub args: u8,
     pub locals: u8,
     pub rets: u8,
     pub captures: Vec<CapturePath>
-}
-
-
-impl Lambda {
-    // Return the arity of the call instruction according to its type.
-    pub fn arity(&self, ct: CallType) -> u8 {
-	match ct {
-	    CallType::Always => 1 + self.args,
-	    CallType::If     => 2 + self.args,
-	    CallType::IfElse => 3 + self.args,
-	}
-    }
-
-    // Perhaps surprisingly, some operations are supported on
-    // functions.
-    //
-    // In particular functions can be concatenated with each other,
-    // and with instructions. This is used to implement partial
-    // evaluation.
-    //
-    // XXX: TBD thunk folding, see issue #37
 }
 
 
@@ -883,7 +861,7 @@ pub trait Operations {
 // incrementally.
 pub struct Compiler {
     data: BiVec<Value>,
-    blocks: Vec<Block>,
+    blocks: Vec<Vec<Instruction>>,
     scopes: ScopeChain,
 }
 
@@ -924,25 +902,48 @@ impl Compiler {
 	eprintln!("compile script");
 
 	self.scopes.push_scope()?;
-
-	self.blocks.push(Block::new());
+	self.blocks.push(Vec::new());
 	for d in decls {
 	    self.compile_statement(&d)?;
 	}
 
-	self.blocks.push(Block::new());
+	self.scopes.push_scope()?;
+	self.blocks.push(Vec::new());
 	for statement in body {
 	    self.compile_statement(&statement)?;
 	}
 
-	self.scopes.pop_scope()?;
+	
+	let frame = self.scopes.pop_scope()?;
+	let args = 0;
+	let locals = frame.locals.len() as u8;
+	let rets = 0;
+	let captures = frame.capture_list;
+	let block1 = Block {
+	    code: self.blocks[1].clone(),
+	    args,
+	    locals,
+	    rets,
+	    captures
+	};
+	let frame = self.scopes.pop_scope()?;
+	let args = 0;
+	let locals = frame.locals.len() as u8;
+	let rets = 0;
+	let block0 = Block {
+	    code: self.blocks[0].clone(),
+	    args,
+	    locals,
+	    rets,
+	    captures: vec![]
+	};
 
 	Ok(Executable {
 	    desc,
 	    input: input,
 	    output: output,
 	    data: self.data.to_vec(),
-	    code: self.blocks.clone()
+	    code: vec![block0, block1]
 	})
     }
 
@@ -1203,7 +1204,7 @@ impl Compiler {
 	}
 
 	// Create a code block to hold the lambda's code.
-	self.blocks.push(Block::new());
+	self.blocks.push(Vec::new());
 
 	// Compile the body.
 	//
@@ -1245,7 +1246,7 @@ impl Compiler {
 	//
 	// The actual lambda value we just constructed gets stored in
 	// the data section.
-	self.compile_const(Value::Lambda(Shared::new(Lambda {
+	self.compile_const(Value::Lambda(Shared::new(Block {
 	    code, args, locals, rets, captures
 	})))
     }
@@ -1300,7 +1301,21 @@ mod tests {
 		input: ast.t_str.clone(),
 		output: ast.t_str.clone(),
 		data: vec![Value::Str("Hello, ".to_string())],
-		code: vec![vec![], vec![Const(0), In, Bin(Add), Out]]
+		code: vec![
+		    Block {
+			code: vec![],
+			args: 0,
+			locals: 0,
+			rets: 0,
+			captures: vec![]
+		    }, Block {
+			code: vec![Const(0), In, Bin(Add), Out],
+			args: 0,
+			locals: 0,
+			rets: 0,
+			captures: vec![]
+		    }
+		]
 	    })
 	);
     }
