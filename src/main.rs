@@ -4,12 +4,11 @@ use std::env;
 
 use udlang::grammar;
 use udlang::parser::parse;
-use udlang::ast::{self, Builder};
+use udlang::ast::{Builder};
 use udlang::ir::{compile, Value};
 use udlang::vm::run;
 
 use std::io::{
-    BufReader,
     BufRead,
     stdin
 };
@@ -29,20 +28,20 @@ fn dump_expr() {
 
 // Try to parse `path` and print the resulting AST.
 fn dump_ast(path: &str) {
-    println!("{:?}", parse(path));
+    println!("{:#?}", parse(path));
 }
 
 
 // Try to compile `path` and print the resulting IR.
 fn dump_ir(path: &str) {
-    println!("{:?}", compile(path))
+    println!("{:#?}", compile(path))
 }
 
 
 // Try to decode an ir::Value from a string
-fn decode(input: std::io::Result<String>) -> Value {
+fn decode(_input: std::io::Result<String>) -> Value {
     // XXX: really implement me
-    Value::Str("foobar".to_string())
+    Value::Int(3)
 }
 
 
