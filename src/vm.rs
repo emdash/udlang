@@ -7,10 +7,9 @@ use crate::ast::{
 
 use crate::ir::{
     Addr,
+    Atom,
     // AList,
-    LoadSrc,
     CallType,
-    CapturePath,
     Executable,
     IndexType,
     Instruction,
@@ -27,7 +26,10 @@ use crate::ir::{
 };
 
 
-use std::fmt::Debug;
+use std::{
+    collections::HashMap,
+    fmt::Debug
+};
 
 
 /* Error Handling ************************************************************/
@@ -45,6 +47,7 @@ pub enum Error {
     TypeError(String),
     NotImplemented(String),
     Trap(TrapType, Value),
+    Undefined(String),
     Internal(String),
 }
 
@@ -85,6 +88,10 @@ impl Error {
 	Err(Self::NotImplemented(format!("{:?} is not implemented", feature)))
     }
 
+    pub fn undefined<T: Debug, U>(id: T) -> Result<U> {
+	Err(Self::Undefined(format!("{:?} is not defined in the current scope", id)))
+    }
+
     pub fn trap<T>(tt: TrapType, value: Value) -> Result<T> {
 	Err(Self::Trap(tt, value))
     }
@@ -114,14 +121,11 @@ where S: Iterator<Item = Value> {
 
 
 // Handles the data required to execute a function.
-//
-// Rather th
-#[derive(Clone, Debug, PartialEq, Eq, Hash)]
+#[derive(Clone, Debug)]
 struct StackFrame {
     pub block: Shared<Block>,
-    pub args: u8,
-    pub values: Vec<Value>,
-    //pub captures: Shared<Seq<Value>>,
+    pub values: Seq<Value>,
+    pub locals: HashMap<Atom, Value>,
     pub returns_value: bool
 }
 
@@ -137,7 +141,7 @@ struct StackFrame {
 //
 // This is a pretty naive implementation, lots of room for improvement
 // I'm sure.
-#[derive(Clone, PartialEq, Eq, Hash)]
+#[derive(Clone, Debug)]
 struct Stack {
     empty: Shared<Seq<Value>>,
     frames: Vec<StackFrame>
@@ -173,24 +177,13 @@ impl Stack {
     ) -> Result<()> {
 	if block.rets != 0 {
 	    Error::not_implemented("Return from top level")
-	} else if block.args != 0 {
+	} else if block.args.len() != 0 {
 	    Error::not_implemented("top-level block requiring arguments")
 	} else {
-	    let mut values = Vec::new();
-	    // reserve stack space for locals
-	    for _ in 0..block.locals {
-		values.push(Value::None);
-	    }
 	    self.frames.push(StackFrame {
 		block: block,
-		// XXX: the .to_vec here tells me I should go back to a
-		// mono-stack design, but use the separate frame stack as
-		// *view* into the mono-stack, which is what I had
-		// intended all along, but I got bogged down in the
-		// details.
-		values: values,
-		//captures: Shared::new(Vec::new()),
-		args: 0,
+		values: Vec::new(),
+		locals: HashMap::new(),
 		returns_value: false
 	    });
 	    Ok(())
@@ -206,29 +199,20 @@ impl Stack {
 	if block.rets > 1 {
 	    Error::not_implemented("Multiple Return Values")
 	} else {
+	    let values = Vec::new();
+	    let returns_value = block.rets == 1;
 	    let top = self.top_frame_mut()?;
-	    let start = top.values.len() - block.args as usize;
-	    // The top of stack contains the actual arguments, so we
-	    // can just split this off into a new vector.
-	    let mut values = top.values.split_off(start);
-	    let args = values.len() as u8;
-	    // reserve stack space for locals
-	    for _ in 0..block.locals {
-		values.push(Value::None);
-	    }
-	    let rets = block.rets == 1;
-	    self.frames.push(StackFrame {
-		block: block,
-		// XXX: the .to_vec here tells me I should go back to a
-		// mono-stack design, but use the separate frame stack as
-		// *view* into the mono-stack, which is what I had
-		// intended all along, but I got bogged down in the
-		// details.
-		values: values,
-		//captures: captures,
-		args: args,
-		returns_value: rets
-	    });
+	    let start = top.values.len() - block.args.len();
+	    // Collect arguments off the current value stack frame,
+	    // and place them into the locals of the callee's stack
+	    // frame.
+	    let locals = block.args
+		.iter()
+		.cloned()
+		.zip(top.values.split_off(start))
+		.collect();
+	    // Push the new stack frame.
+	    self.frames.push(StackFrame {block, values, locals, returns_value});
 	    Ok(())
 	}
     }
@@ -285,14 +269,28 @@ impl Stack {
 	}
     }
 
-    fn get_capture(&self, pos: u8) -> Result<Value> {
-	let top = self.top_frame()?;
-	let path = top.block.captures[pos as usize];
-	let frame = self.frames.len() - path.scope as usize - 1;
-	eprintln!("pos: {} frame: {} path: {:?} len: {}", pos, frame, path, self.frames.len());
-	let index = path.index as usize;
-	let frame = &self.frames[frame];
-	Ok(frame.values[index].clone())
+    // Load the given local onto the stack.
+    pub fn load(&mut self, atom: Atom) -> Result<()> {
+	let value = self.get_local(atom)?;
+	self.push(value)
+    }
+
+    // Find the given local somewhere in the call stack.
+    fn get_local(&mut self, atom: Atom) -> Result<Value> {
+	for frame in self.frames.iter().rev() {
+	    if let Some(value) = frame.locals.get(&atom) {
+		return Ok(value.clone());
+	    }
+	}
+	Error::undefined(atom)
+    }
+
+    // Store the given local to the call stack.
+    fn store(&mut self, atom: Atom) -> Result<()> {
+	let value = self.pop()?;
+	let frame = self.top_frame_mut()?;
+	frame.locals.insert(atom, value);
+	Ok(())
     }
 }
 
@@ -417,7 +415,7 @@ impl VM {
 	eprintln!("\n\nExec: {:?}", insn);
 	match insn {
 	    Const(addr)       => self.load_const(*addr),
-	    Load(arg_type, x) => self.load_arg(*arg_type, *x),
+	    Load(atom)        => self.load_arg(*atom),
 	    Store(index)      => self.store(*index),
 	    Un(opcode)        => self.unop(*opcode),
 	    Bin(opcode)       => self.binop(*opcode),
@@ -446,7 +444,7 @@ impl VM {
     // Some values need to be translated to their runtime equivalent,
     // so this is not quite as trivial as it seems.
     fn load_const(&mut self, addr: Addr) -> Result<()> {
-	let const_value = self.script.data[addr as usize].clone();
+	let const_value = self.script.data[addr.0 as usize].clone();
 
 	// XXX: what we need here is to translate lambda relative
 	// capture paths in to absolute capture paths. this way we can
@@ -460,27 +458,13 @@ impl VM {
     }
 
     // Copy an argument or captured value to the top of stack.
-    fn load_arg(&mut self, src: LoadSrc, pos: u8) -> Result<()> {
-	let frame = self.stack.top_frame()?;
-	let value = match src {
-	    LoadSrc::Local => frame.values[pos as usize].clone(),
-	    LoadSrc::Capture => self.stack.get_capture(pos)?,
-	};
-	eprintln!("Load {:#?} {:#?} {:?}", src, pos, value);
-	self.stack.push(value)
+    fn load_arg(&mut self, id: Atom) -> Result<()> {
+	self.stack.load(id)
     }
 
     // Shuffle an local variable to the correct stack slot position.
-    fn store(&mut self, pos: u8) -> Result<()> {
-	let pos = pos as usize;
-	let value = self.stack.pop()?;
-	let frame = self.stack.top_frame_mut()?;
-	if pos <= frame.values.len() {
-	    frame.values[pos + frame.args as usize] = value;
-	    Ok(())
-	} else {
-	    Error::stack_underflow()
-	}
+    fn store(&mut self, id: Atom) -> Result<()> {
+	self.stack.store(id)
     }
 
     // Dispatch over unary arithmetic and logic operators.
