@@ -270,15 +270,15 @@ impl Stack {
     }
 
     // Load the given local onto the stack.
-    pub fn load(&mut self, atom: Atom) -> Result<()> {
+    pub fn load(&mut self, atom: &Atom) -> Result<()> {
 	let value = self.get_local(atom)?;
 	self.push(value)
     }
 
     // Find the given local somewhere in the call stack.
-    fn get_local(&mut self, atom: Atom) -> Result<Value> {
+    fn get_local(&mut self, atom: &Atom) -> Result<Value> {
 	for frame in self.frames.iter().rev() {
-	    if let Some(value) = frame.locals.get(&atom) {
+	    if let Some(value) = frame.locals.get(atom) {
 		return Ok(value.clone());
 	    }
 	}
@@ -286,10 +286,10 @@ impl Stack {
     }
 
     // Store the given local to the call stack.
-    fn store(&mut self, atom: Atom) -> Result<()> {
+    fn store(&mut self, atom: &Atom) -> Result<()> {
 	let value = self.pop()?;
 	let frame = self.top_frame_mut()?;
-	frame.locals.insert(atom, value);
+	frame.locals.insert(atom.clone(), value);
 	Ok(())
     }
 }
@@ -415,8 +415,8 @@ impl VM {
 	eprintln!("\n\nExec: {:?}", insn);
 	match insn {
 	    Const(addr)       => self.load_const(*addr),
-	    Load(atom)        => self.load_arg(*atom),
-	    Store(index)      => self.store(*index),
+	    Load(atom)        => self.load_arg(atom),
+	    Store(atom)       => self.store(atom),
 	    Un(opcode)        => self.unop(*opcode),
 	    Bin(opcode)       => self.binop(*opcode),
 	    Call(ct)          => self.call(*ct),	    
@@ -458,12 +458,12 @@ impl VM {
     }
 
     // Copy an argument or captured value to the top of stack.
-    fn load_arg(&mut self, id: Atom) -> Result<()> {
+    fn load_arg(&mut self, id: &Atom) -> Result<()> {
 	self.stack.load(id)
     }
 
     // Shuffle an local variable to the correct stack slot position.
-    fn store(&mut self, id: Atom) -> Result<()> {
+    fn store(&mut self, id: &Atom) -> Result<()> {
 	self.stack.store(id)
     }
 

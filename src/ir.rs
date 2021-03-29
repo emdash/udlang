@@ -15,6 +15,7 @@ use crate::ast::{
 use crate::parser;
 
 use std::collections::hash_map::{HashMap, Entry};
+use std::collections::hash_set::HashSet;
 use std::ops::Deref;
 use std::hash::Hash;
 use std::fmt::Debug;
@@ -167,10 +168,8 @@ impl<T: Hash + Eq + Clone + Debug> BiVec<T> {
 pub struct Addr(pub u16);
 
 
-// Abstract over identifiers. These all get converted to a 16-bit
-// numerical id.
-#[derive(Copy, Clone, Debug, Hash, Eq, PartialEq)]
-pub struct Atom(u16);
+// Abstract over identifiers.
+pub type Atom = Shared<str>;
 
 
 // This represents the entire instruction set.
@@ -178,21 +177,12 @@ pub struct Atom(u16);
 // You can think of this IR as a minimal instruction set over rich
 // types.
 //
-// This is flatter than I would like, but the goal is to avoid the
-// enum bloat that can happen with deeply-nested enumerations in
-// Rust.
-//
-// Since we directly execute vectors of these instructions, it is
-// important to keep the size of this value as small as practical. We
-// do this by making sure that any inner enumeration is `[repr(u8)]`
-// here.
-//
-// One way the above manifests is the decision to separate Const from
-// Load.
-//
+// No effort is made here at saving memory. The IR is designed to be
+// easy to process for subsequent passes.
+
 // XXX: Somewhere we should be able to static assert that
 // sizeof(Instruction) <= 64-bits.
-#[derive(Copy, Clone, Debug, PartialEq, Eq, Hash)]
+#[derive(Clone, Debug, PartialEq, Eq, Hash)]
 pub enum Instruction {
     Const(Addr),        // Load a value from the const table.
     Load(Atom),         // Load a local variable by atom id.
@@ -704,7 +694,7 @@ pub trait Operations {
 // This uses the recursive visitor pattern to construct output
 // incrementally.
 pub struct Compiler {
-    atoms: BiVec<Shared<str>>,
+    atoms: HashSet<Shared<str>>,
     data: BiVec<Value>,
     blocks: Vec<Vec<Instruction>>,
 }
@@ -714,7 +704,7 @@ impl Compiler {
     // Create a new Compiler.
     pub fn new() -> Self {
 	Self {
-	    atoms: BiVec::new(),
+	    atoms: HashSet::new(),
 	    data: BiVec::new(),
 	    blocks: Vec::new(),
 	}
@@ -898,7 +888,13 @@ impl Compiler {
 
     // Find or create an atom for the given &str.
     pub fn compile_atom(&mut self, val: &str) -> Atom {
-	Atom(self.atoms.push(Shared::from(val)) as u16)
+	if let Some(atom) = self.atoms.get(val) {
+	    atom.clone()
+	} else {
+	    let ret = Atom::from(val);
+	    self.atoms.insert(ret.clone());
+	    ret
+	}
     }
     
 
