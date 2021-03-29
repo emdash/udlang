@@ -1,6 +1,6 @@
-// uDashBoard: featherweight dashboard application.
+// udlang: stream processing language.
 //
-// Copyright (C) 2019  Brandon Lewis
+// Copyright (C) 2021  Brandon Lewis
 //
 // This program is free software: you can redistribute it and/or
 // modify it under the terms of the GNU Lesser General Public License
