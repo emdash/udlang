@@ -10,6 +10,7 @@ license = "LGPL-3.0-or-later"
 [dependencies]
 lalrpop-util = "0.18.1"
 ordered-float = "2.0"
+serde-json = "1.0"
 
 
 [build-dependencies.lalrpop]

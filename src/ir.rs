@@ -677,20 +677,20 @@ pub trait Operations {
     } }
 
     operator! { binary eq {
-	(None,           None)           => Bool(true),
-	(Atom(a),        Atom(b))        => Bool(a == b),
-	(Type(a),        Type(b))        => Bool(a == b),
+        (None,           None)           => Bool(true),
+        (Atom(a),        Atom(b))        => Bool(a == b),
+        (Type(a),        Type(b))        => Bool(a == b),
         (Bool(a),        Bool(b))        => Bool(a == b),
         (Int(a),         Int(b))         => Bool(a == b),
         (Float(a),       Float(b))       => Bool(a == b),
         (Str(a),         Str(b))         => Bool(a == b),
-	(Point(a),       Point(b))       => Bool(a == b),
-	(Lambda(a),      Lambda(b))      => Bool(a == b),
-	(Tuple(a),       Tuple(b))       => Bool(a == b),
+        (Point(a),       Point(b))       => Bool(a == b),
+        (Lambda(a),      Lambda(b))      => Bool(a == b),
+        (Tuple(a),       Tuple(b))       => Bool(a == b),
         (List(a),        List(b))        => Bool(a == b),
         (Map(a),         Map(b))         => Bool(a == b),
-	(Record(a),      Record(b))      => Bool(a == b),
-	(Module(a),      Module(b))      => Bool(a == b),
+        (Record(a),      Record(b))      => Bool(a == b),
+        (Module(a),      Module(b))      => Bool(a == b),
         _                                => Bool(false)
     } }
 }
