@@ -6,7 +6,6 @@ use crate::ast::{
 };
 
 use crate::ir::{
-    Addr,
     Atom,
     // AList,
     CallType,
@@ -159,15 +158,16 @@ impl Stack {
     pub fn debug_dump(&self) {
 	eprintln!("Stack:");
 	for (i, frame) in self.frames.iter().enumerate() {
-	    eprintln!("-- Frame {} Values --\n", i);
+	    eprintln!("-- Frame {} --", i);
+	    eprintln!("   Value Stack:");
 	    for (i, val) in frame.values.iter().enumerate() {
-		eprintln!("{} {:?}", i, val);
+		eprintln!("      {} {:?}", i, val);
 	    }
-	    /*
-	    eprintln!("-- Frame {} Captures --\n", i);
-	    for (i, val) in frame.captures.iter().enumerate() {
-		eprintln!("{} {:?}", i, val);
-	    }*/
+	    eprintln!("   Locals:");
+	    for (i, (key, val)) in frame.locals.iter().enumerate() {
+		eprintln!("      {} {:?}: {:?}", i, key, val);
+	    }
+	    eprintln!("\n");
 	}
     }
 
@@ -414,7 +414,7 @@ impl VM {
 	use Instruction::*;
 	eprintln!("\n\nExec: {:?}", insn);
 	match insn {
-	    Const(addr)       => self.load_const(*addr),
+	    Const(val)        => self.load_const(val.clone()),
 	    Load(atom)        => self.load_arg(atom),
 	    Store(atom)       => self.store(atom),
 	    Un(opcode)        => self.unop(*opcode),
@@ -422,12 +422,8 @@ impl VM {
 	    Call(ct)          => self.call(*ct),	    
 	    In                => self.stack.push(self.input.clone()),
 
-	    Out               => {eprintln!("{:?}", self.stack.pop()?); Ok(())},
-	     /* XXX: should print to stderr */
+	    Out               => {println!("{:?}", self.stack.pop()?); Ok(())},
 	    Debug             => {eprintln!("{:#?}", self.stack.peek(0)?); Ok(())},
-	    Drop(_)           => Error::not_implemented("Drop"),
-	    Dup(_)            => Error::not_implemented("Dup"),
-	    Swap(_, _)        => Error::not_implemented("Swap"),
 	    Placeholder       => Error::not_implemented("Partial application"),
 	    Index(t)          => self.index(*t),
 	    Matches(t)        => self.matches(*t),
@@ -439,22 +435,9 @@ impl VM {
 	Ok(())
     }
 
-    // Load values from the data section of the script.
-    //
-    // Some values need to be translated to their runtime equivalent,
-    // so this is not quite as trivial as it seems.
-    fn load_const(&mut self, addr: Addr) -> Result<()> {
-	let const_value = self.script.data[addr.0 as usize].clone();
-
-	// XXX: what we need here is to translate lambda relative
-	// capture paths in to absolute capture paths. this way we can
-	// defer lookup, which is needed for recursive functions, but
-	// we still get the right stack position. it's a lot more
-	// complicated than I would like, and makes me wonder if this
-	// scheme is worth it at this point. It'd be a lot easier to
-	// work with a scope chain that simply took values by name.
-	
-	self.stack.push(const_value)
+    // Load a constant value onto the stack.
+    fn load_const(&mut self, val: Value) -> Result<()> {
+	self.stack.push(val)
     }
 
     // Copy an argument or captured value to the top of stack.
