@@ -162,13 +162,12 @@ impl<T: Hash + Eq + Clone + Debug> BiVec<T> {
 /* IR Instruction Set ********************************************************/
 
 
-// Abstract address of a value in memory somewhere. Keeping small
-// because it's used as an instruction immediate.
-#[derive(Copy, Clone, Debug, Hash, Eq, PartialEq)]
-pub struct Addr(pub u16);
-
-
-// Abstract over identifiers.
+// One small concession to optimization: identifers are automatically
+// interned.
+//
+// In theory, by placing these behind Shared<>, and keeping them in a
+// HashSet, we get pointer equality for free, which should speed up
+// local variable lookup.
 pub type Atom = Shared<str>;
 
 
@@ -177,14 +176,13 @@ pub type Atom = Shared<str>;
 // You can think of this IR as a minimal instruction set over rich
 // types.
 //
-// No effort is made here at saving memory. The IR is designed to be
-// easy to process for subsequent passes.
-
-// XXX: Somewhere we should be able to static assert that
-// sizeof(Instruction) <= 64-bits.
+// No effort is made here at optimization. The IR is intended to be
+// easy to reason about for subsequent optimization passes.
+//
+// This is really just a stack-based representation of the AST.
 #[derive(Clone, Debug, PartialEq, Eq, Hash)]
 pub enum Instruction {
-    Const(Addr),        // Load a value from the const table.
+    Const(Value),       // Place a constant value on the stack.
     Load(Atom),         // Load a local variable by atom id.
     Store(Atom),        // Store a value as a local variable.
     Un(UnOp),           // Wraps all unary arithmetic and logic operations.
@@ -193,9 +191,6 @@ pub enum Instruction {
     In,                 // Place input record on stack.
     Out,                // Send top of stack to output.
     Debug,              // Inspect top of stack without altering it.
-    Drop(u8),           // Discard values.
-    Dup(u8),            // Copy values.
-    Swap(u8, u8),       // Exchange two stack indices.
     Placeholder,        // This value is used in a partial application.
     Index(IndexType),   // Index into a collection.
     Matches(TypeTag),   // True if top of stack matches given type.
@@ -383,9 +378,6 @@ pub struct Executable {
     // All constants live in this table, including function values.
     // References point either back into this table, or into runtime
     // storage.
-    pub data: Seq<Value>,
-    // Code blocks with special meaning. For now this is limited to
-    // the library / script entry points.
     pub code: Vec<Block>,
 }
 
@@ -695,7 +687,6 @@ pub trait Operations {
 // incrementally.
 pub struct Compiler {
     atoms: HashSet<Shared<str>>,
-    data: BiVec<Value>,
     blocks: Vec<Vec<Instruction>>,
 }
 
@@ -705,7 +696,6 @@ impl Compiler {
     pub fn new() -> Self {
 	Self {
 	    atoms: HashSet::new(),
-	    data: BiVec::new(),
 	    blocks: Vec::new(),
 	}
     }
@@ -761,7 +751,6 @@ impl Compiler {
 	    desc,
 	    input: input,
 	    output: output,
-	    data: self.data.to_vec(),
 	    code: vec![block0, block1]
 	})
     }
@@ -881,9 +870,7 @@ impl Compiler {
     // The value will be added to the data section if not already
     // present, and a `Const` instruction placed in the output.
     pub fn compile_const(&mut self, val: Value) -> Result<()> {
-	// XXX: handle address overflow.
-	let addr = Addr(self.data.push(val) as u16);
-	self.emit(Instruction::Const(addr))
+	self.emit(Instruction::Const(val))
     }
 
     // Find or create an atom for the given &str.
@@ -1114,14 +1101,13 @@ mod tests {
 		desc: "Hello world, in uDLang".to_string(),
 		input: ast.t_str.clone(),
 		output: ast.t_str.clone(),
-		data: vec![Value::Str("Hello, ".to_string())],
 		code: vec![
 		    Block {
 			code: vec![],
 			args: vec![],
 			rets: 0,
 		    }, Block {
-			code: vec![Const(Addr(0)), In, Bin(Add), Out],
+			code: vec![Const(Value::Str("Hello, ".to_string())), In, Bin(Add), Out],
 			args: vec![],
 			rets: 0,
 		    }
