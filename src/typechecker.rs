@@ -360,7 +360,7 @@ impl TypeChecker {
                 let env = Env::chain(&self.types);
                 let sub = TypeChecker::new(env);
                 sub.types.define(iter, &item);
-                sub.check_statement(body)?;
+                sub.eval_expr(body)?;
             },
             Statement::MapIter(k, v, map, body) => {
                 // TODO: raise proper error, rather than crashing.
@@ -370,11 +370,11 @@ impl TypeChecker {
                 let sub = TypeChecker::new(env);
                 sub.types.define(k, &Node::new(TypeTag::Str));
                 sub.types.define(v, &item);
-                sub.check_statement(body)?;
+                sub.eval_expr(&body)?;
             },
             Statement::While(cond, body) => {
                 self.is_bool(cond)?;
-                self.check_statement(body)?;
+                self.check_statement(&body)?;
             },
         };
         Ok(())
@@ -564,7 +564,7 @@ mod tests {
         let statement = Node::new(ast.list_iter(
             "i",
             ast.id("x"),
-            ast.out(ast.list(&[ast.s("show_text"), ast.id("i")]))
+            ast.block(&[ast.out(ast.list(&[ast.s("show_text"), ast.id("i")]))], ast.void.clone())
         ));
 
         assert_eq!(tc.check_statement(&statement), Err(NotImplemented));
@@ -572,7 +572,7 @@ mod tests {
         let statement = Node::new(ast.list_iter(
             "i",
             ast.id("x"),
-            ast.expr_for_effect(ast.block(&[], ast.id("i")))
+            ast.block(&[], ast.id("i"))
         ));
 
         assert_eq!(
@@ -595,7 +595,7 @@ mod tests {
             "k",
             "v",
             ast.id("x"),
-            ast.out(ast.list(&[ast.s("show_text"), ast.id("v")]))
+            ast.block(&[ast.out(ast.list(&[ast.s("show_text"), ast.id("v")]))], ast.void.clone())
         ));
 
         assert_eq!(tc.check_statement(&statement), Err(NotImplemented));
@@ -604,7 +604,7 @@ mod tests {
             "k",
             "v",
             ast.id("x"),
-            ast.expr_for_effect(ast.block(&[], ast.id("v")))
+            ast.block(&[ast.expr_for_effect(ast.block(&[], ast.id("v")))], ast.void.clone())
         ));
 
         assert_eq!(

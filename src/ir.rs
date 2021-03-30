@@ -177,14 +177,20 @@ pub type Atom = Shared<str>;
 // types.
 //
 // No effort is made here at optimization. The IR is intended to be
-// easy to reason about for subsequent optimization passes.
+// easy to reason about for subsequent optimization passes, and easy
+// to process.
 //
-// This is really just a stack-based representation of the AST.
+// It is essentially just a stack-based representation of the AST,
+// with a few simplifications.
 #[derive(Clone, Debug, PartialEq, Eq, Hash)]
 pub enum Instruction {
     Const(Value),       // Place a constant value on the stack.
+    Lcons(u16),         // Construct a list literal with top n stack items.
+    Mcons(u16),         // Construct a list literal with top n stack items.
     Load(Atom),         // Load a local variable by atom id.
     Store(Atom),        // Store a value as a local variable.
+    // XXX: Arg(u8)     // Load the corresponding argument by its position.
+    // XXX: Capture(u8) // Load the corresponding capture by its index.
     Un(UnOp),           // Wraps all unary arithmetic and logic operations.
     Bin(BinOp),         // Wraps all binary arithmetic and logic operations.
     Call(CallType),     // Unconditional, conditional, and iterative.
@@ -204,16 +210,15 @@ pub enum Instruction {
 //
 // This enum specifies the variants of the call instruction, including
 // conditional and iterative forms.
-//
-// The number of 
 #[derive(Copy, Clone, Debug, PartialEq, Eq, Hash)]
 #[repr(u8)]
 pub enum CallType {
-    Always,
-    If,
-    IfElse,
-    // XXX: TBD
-    // Iterative forms.
+    Always,  // Plain, vanilla function call.
+    If,      // Conditional call.
+    IfElse,  // Ternary expression.
+    ForEach, // Iterate over over a collection for side-effects.
+    // XXX: Reduce // Fold over a collection to produce a scalar
+    // XXX: Map    // Isomorphism: iterate over a collection to produce a new collection.
 }
 
 
@@ -787,8 +792,8 @@ impl Compiler {
 	   Out(expr)           => self.compile_out(expr),
 	   Def(id, val)        => self.compile_def(id, val),
 	   TypeDef(id, t)      => self.compile_typedef(id, t),
-	   ListIter(_, _, _)   => Error::not_implemented("list iteration"),
-	   MapIter(_, _, _, _) => Error::not_implemented("map iteration"),
+	   ListIter(i, l, b)   => self.compile_iter(&[i], l, b),
+	   MapIter(k, v, m, b) => self.compile_iter(&[k, v], m, b),
 	   While(_, _)         => Error::not_implemented("while loops"),
 	   Suppose(_, _, _)    => Error::not_implemented("subjunctives"),
 	   EffectCapture       => Error::not_implemented("effect captures")
@@ -830,7 +835,52 @@ impl Compiler {
 	Error::not_implemented("local typedefs")
     }
 
+    // Try to compile a for loop over a collection
+    pub fn compile_iter(
+	&mut self,
+	itervars: &[&str],
+	collection: &ExprNode,
+	body: &ExprNode
+    ) -> Result<()> {
+	// First, compile the collection expression
+	self.compile_expr(collection)?;
+
+	// Add type information to the plain values. We just treat
+	// these as Any for now.
+	//
+	// XXX: this should be derived from the underlying collection
+	// somehow, or else explicitly included in the grammar.
+	let any = Shared::new(ast::TypeTag::Any);
+	let args = itervars
+	    .iter()
+	    .cloned()
+	    .map(|iv| (iv.to_string(), any.clone()))
+	    .collect::<Vec<(String, TypeNode)>>();
+	
+	self.compile_lambda(
+	    // The given iterator ids are converted to the lambda args
+	    //
+	    // XXX: the type should be the element type of the
+	    // collection, whatever that ends up being.
+	    args.as_slice(),
+	    // XXX: For now we only support the statement form of iteration.
+	    // But we have to eventually support the expression form.
+	    &Shared::new(ast::TypeTag::Void),
+	    // Body is just passed as given.
+	    body
+	)?;
+	self.emit(Instruction::Call(CallType::ForEach))
+	    
+    }
+
     // Dispatch to each expression variant.
+    //
+    // XXX: everything in this class could take nodes by move, the
+    // trouble is that we can't move out of Rc, and the AST used RC
+    // everywhere. IF there is a way to consume an Rc to get its inner
+    // value, I would love to know. Then we could avoid incrementing
+    // the ref count. We would consume the AST to produce the IR,
+    // avoiding allocations and refcounts. That feels like a win.
     pub fn compile_expr(&mut self, expr: &ExprNode) -> Result<()> {
 	use ast::Expr::*;
 
@@ -848,8 +898,8 @@ impl Compiler {
 	    This                    => Error::not_implemented("self"),
 	    In                      => self.emit(Instruction::In),
 	    Partial                 => self.emit(Instruction::Placeholder),
-	    List(_)                 => Error::not_implemented("list literal"),
-	    Map(_)                  => Error::not_implemented("map literal"),
+	    List(items)             => self.compile_list(items),
+	    Map(items)              => self.compile_map(items),
 	    Id(id)                  => self.compile_variable_reference(id),
 	    Dot(_, _)               => Error::not_implemented("fixed index"),
 	    Has(_, _)               => Error::not_implemented("member test"),
@@ -865,14 +915,6 @@ impl Compiler {
 	Ok(())
     }
 
-    // Try to compile a literal / constant value.
-    //
-    // The value will be added to the data section if not already
-    // present, and a `Const` instruction placed in the output.
-    pub fn compile_const(&mut self, val: Value) -> Result<()> {
-	self.emit(Instruction::Const(val))
-    }
-
     // Find or create an atom for the given &str.
     pub fn compile_atom(&mut self, val: &str) -> Atom {
 	if let Some(atom) = self.atoms.get(val) {
@@ -883,7 +925,62 @@ impl Compiler {
 	    ret
 	}
     }
+
+    // Try to compile a literal / constant value.
+    //
+    // The value will be added to the data section if not already
+    // present, and a `Const` instruction placed in the output.
+    pub fn compile_const(&mut self, val: Value) -> Result<()> {
+	self.emit(Instruction::Const(val))
+    }
+
+    // Compile a list literal.
+    //
+    //
+    // Somewhat obnoxiously, these have to be constructed on the
+    // stack, since they are allowed to contain arbitrary expressions,
+    // and they can't be mutated.
+    //
+    // The hope is that subsequent optimization passes will handle
+    // collecting these into constant values -- but if the value of
+    // any element depends on the input record, we still have to fall
+    // Somewhat obnoxiously, these have to be constructed on the
+    // stack, since they are allowed to contain arbitrary expressions,
+    // and they can't be mutated.
+    pub fn compile_list(&mut self, items: &[ExprNode]) -> Result<()> {
+	for item in items {
+	    self.compile_expr(item)?;
+	}
+
+	if items.len() < 0xFFFF {
+	    self.emit(Instruction::Lcons(items.len() as u16))
+	} else {
+	    Error::not_implemented("List literal with more than 2^16 items")
+	}
+    }    
     
+    // Compile a map literal.
+    //
+    // Somewhat obnoxiously, these have to be constructed on the
+    // stack, since they are allowed to contain arbitrary expressions,
+    // and they can't be mutated.
+    //
+    // The hope is that subsequent optimization passes will handle
+    // collecting these into constant values -- but if the value of
+    // any element depends on the input record, we still have to fall
+    // back to stack construction.
+    pub fn compile_map(&mut self, items: &HashMap<String, ExprNode>) -> Result<()> {
+	for (key, value) in items {
+	    self.compile_const(Value::Str(key.clone()))?;
+	    self.compile_expr(value)?;
+	}
+
+	if items.len() < 0xFFFF {
+	    self.emit(Instruction::Mcons(items.len() as u16))
+	} else {
+	    Error::not_implemented("Map literal with > than 2^16 items")
+	}
+    }
 
     // Try to compile an if-else chain.
     //

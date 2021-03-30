@@ -415,6 +415,8 @@ impl VM {
 	eprintln!("\n\nExec: {:?}", insn);
 	match insn {
 	    Const(val)        => self.load_const(val.clone()),
+	    Lcons(n)          => self.list_construct(*n),
+	    Mcons(n)          => self.map_construct(*n),
 	    Load(atom)        => self.load_arg(atom),
 	    Store(atom)       => self.store(atom),
 	    Un(opcode)        => self.unop(*opcode),
@@ -438,6 +440,21 @@ impl VM {
     // Load a constant value onto the stack.
     fn load_const(&mut self, val: Value) -> Result<()> {
 	self.stack.push(val)
+    }
+
+    // Construct a list value from the stack.
+    fn list_construct(&mut self, n: u16) -> Result<()> {
+	let frame = self.stack.top_frame_mut()?;
+	let len = frame.values.len();
+	let items = frame.values.split_off(len - n as usize);
+	self.stack.push(Value::List(Shared::new(items)))
+    }
+
+    // Construct a map value from the tsack.
+    fn map_construct(&mut self, _:u16) -> Result<()> {
+	// XXX: Let's wait for a hashable map class, since searching
+	// an AList is a pain.
+	Error::not_implemented("Map literals")
     }
 
     // Copy an argument or captured value to the top of stack.
@@ -471,8 +488,9 @@ impl VM {
 		let callable = self.stack.pop()?;
 		self.exec_callable(callable)
 	    },
-	    CallType::If     => self.call_if(),
-	    CallType::IfElse => self.call_if_else(),
+	    CallType::If      => self.call_if(),
+	    CallType::IfElse  => self.call_if_else(),
+	    CallType::ForEach => self.call_for_each()
 	}	
     }
 
@@ -500,6 +518,30 @@ impl VM {
 	    Value::Bool(true)  => self.exec_callable(if_true),
 	    Value::Bool(false) => self.exec_callable(if_false),
 	    illegal => Error::type_error("Bool", &format!("{:#?}", illegal))
+	}
+    }
+
+    // Iterative call over each item in a collection.
+    //
+    // Corresponds to for ... in ... {...}
+    fn call_for_each(&mut self) -> Result<()> {
+	let callable = self.stack.pop()?;
+	let collection = self.stack.pop()?;
+	match collection {
+	    Value::List(l) => {
+		Ok(for i in l.iter() {
+		    self.stack.push(i.clone())?;
+		    self.exec_callable(callable.clone())?;
+		})
+	    },
+	    Value::Map(m)  => {
+		Ok(for (k, v) in m.iter() {
+		    self.stack.push(Value::Str(k.clone()))?;
+		    self.stack.push(v.clone())?;
+		    self.exec_callable(callable.clone())?;
+		})
+	    },
+	    illegal => Error::type_error("Iterable", &format!("{:#?}", illegal))
 	}
     }
 
@@ -538,8 +580,8 @@ impl VM {
 	let index = self.stack.pop()?;
 	let collection = self.stack.pop()?;
 	match (&index, t) {
-	    (Value::List(_), IndexType::List) => (),
-	    (Value::Map(_), IndexType::Map) => (),
+	    (Value::List(_),   IndexType::List)   => (),
+	    (Value::Map(_),    IndexType::Map)    => (),
 	    (Value::Record(_), IndexType::Record) => (),
 	    (index, _) => {Error::type_error(index, t)?;}
 	};

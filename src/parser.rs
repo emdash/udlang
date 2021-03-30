@@ -514,13 +514,13 @@ mod tests {
 	let parse = ast.list_iter(
 	    "p",
 	    ast.id("points"),
-	    ast.expr_for_effect(ast.block(
+	    ast.block(
 		&[
 		    ast.out(ast.list(&[ast.s("moveto"), ast.id("p")])),
 		    ast.out(ast.list(&[ast.s("circle"), ast.f(50.0)]))
 		],
 		ast.void.clone()
-	    ))
+	    )
         );
 
         assert_statement(test, parse);
@@ -540,7 +540,7 @@ mod tests {
 	let parse = ast.map_iter(
 	    "k", "p",
 	    ast.id("x"),
-	    ast.expr_for_effect(ast.block(
+	    ast.block(
 		&[
 		    ast.out(ast.list(&[
 			ast.s("moveto"),
@@ -550,7 +550,7 @@ mod tests {
 		    ast.out(ast.list(&[ast.s("text"), ast.id("k")]))
 		],
 		ast.void.clone()
-	    ))
+	    )
 	);
 
         assert_statement(test, parse);
@@ -810,9 +810,7 @@ mod tests {
 	    ast.list_iter(
 		"i",
 		ast.in_.clone(),
-		ast.expr_for_effect(
-		    ast.block(&[ast.out(ast.id("i"))], ast.void.clone())
-		)
+		ast.block(&[ast.out(ast.id("i"))], ast.void.clone())
 	    )
 	);
 
@@ -823,9 +821,7 @@ mod tests {
 	    ast.list_iter(
 		"i",
 		ast.dot(ast.in_.clone(), "items"),
-		ast.expr_for_effect(
-		    ast.block(&[ast.out(ast.id("i"))], ast.void.clone())
-		)
+		ast.block(&[ast.out(ast.id("i"))], ast.void.clone())
 	    )
 	);
     }
