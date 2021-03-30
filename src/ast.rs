@@ -253,8 +253,8 @@ pub enum Statement {
     Out(ExprNode),
     Def(String, ExprNode),
     TypeDef(String, TypeNode),
-    ListIter(String, ExprNode, StmtNode),
-    MapIter(String, String, ExprNode, StmtNode),
+    ListIter(String, ExprNode, ExprNode),
+    MapIter(String, String, ExprNode, ExprNode),
     While(ExprNode, StmtNode),
     Suppose(ExprNode, StmtNode, StmtNode),
     EffectCapture,
@@ -680,7 +680,7 @@ impl Builder {
     pub fn list_iter(
 	&self,
 	name: &str, list: ExprNode,
-	body: StmtNode
+	body: ExprNode
     ) -> StmtNode {
 	self.statement(
 	    Statement::ListIter(
@@ -696,7 +696,7 @@ impl Builder {
 	key: &str,
 	value: &str,
 	map: ExprNode,
-	body: StmtNode
+	body: ExprNode
     ) -> StmtNode {
 	self.statement(Statement::MapIter(
             String::from(key),

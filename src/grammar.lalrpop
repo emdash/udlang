@@ -273,9 +273,9 @@ CondStmtClause: (ExprNode, ExprNode)
 // Iterate over a collection.
 Iteration: StmtNode = {
     "for" <name:Id> "in" <list:Expr> <body:BlockStmt>
-	=> ast.list_iter(name, list, ast.expr_for_effect(body)),
+	=> ast.list_iter(name, list, body),
     "for" "(" <key:Id> "," <value:Id> ")" "in" <map:Expr> <body:BlockStmt>
-	=> ast.map_iter(key, value, map, ast.expr_for_effect(body))
+	=> ast.map_iter(key, value, map, body)
 }
 
 
