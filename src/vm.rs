@@ -9,6 +9,7 @@ use crate::ir::{
     Atom,
     // AList,
     CallType,
+    CaptureOp,
     Executable,
     IndexType,
     Instruction,
@@ -143,7 +144,7 @@ struct StackFrame {
 #[derive(Clone, Debug)]
 struct Stack {
     empty: Shared<Seq<Value>>,
-    frames: Vec<StackFrame>
+    frames: Vec<StackFrame>,
 }
 
 
@@ -151,7 +152,7 @@ impl Stack {
     pub fn new() -> Stack {
 	Stack {
 	    empty: Shared::new(Vec::new()),
-	    frames: Vec::new()
+	    frames: Vec::new(),
 	}
     }
 
@@ -261,7 +262,7 @@ impl Stack {
     // Try to inspect the top of stack.
     fn peek(&self, rel: u8) -> Result<Value> {
 	let frame = self.top_frame()?;
-	let index = frame.values.len() - rel as usize - 1;
+	let index = frame.values.len() - (rel as usize) - 1;
 	if frame.values.len() > 0 {
 	    Ok(frame.values[index].clone())
 	} else {
@@ -351,6 +352,7 @@ pub struct VM {
     script: Executable,
     stack: Stack,
     input: Value,
+    captures: Vec<Vec<Value>>
 }
 
 
@@ -363,7 +365,8 @@ impl VM {
     pub fn new(script: Executable) -> VM {
 	let stack = Stack::new();
 	let input = Value::None;
-	VM {script, stack, input}
+	let captures = Vec::new();
+	VM {script, stack, input, captures}
     }
 
     // Run the given script until the input iterator is exhausted.
@@ -424,7 +427,8 @@ impl VM {
 	    Call(ct)          => self.call(*ct),	    
 	    In                => self.stack.push(self.input.clone()),
 
-	    Out               => {println!("{:?}", self.stack.pop()?); Ok(())},
+	    Out               => self.out(),
+	    Capture(op)       => self.capture(*op),
 	    Debug             => {eprintln!("{:#?}", self.stack.peek(0)?); Ok(())},
 	    Placeholder       => Error::not_implemented("Partial application"),
 	    Index(t)          => self.index(*t),
@@ -574,6 +578,64 @@ impl VM {
 	    Ok(())
 	}
     }
+
+    // Handle the `out` instruction.
+    fn out(&mut self) -> Result<()> {
+	let value = self.stack.pop()?;
+	self.emit(value)
+    }
+
+    // Place a value into the output stream or current capture buffer.
+    fn emit(&mut self, value: Value) -> Result<()> {
+	eprintln!("Emit {:?}", self.captures);
+	Ok(if self.captures.len() > 0 {
+	    if let Some(buffer) = self.captures.last_mut() {
+		buffer.push(value);
+	    } else {
+		panic!("Unpossible!")
+	    }
+	} else {
+	    println!("{:?}", value);
+	})
+    }
+
+    // Handle operations on the output capture stack.
+    fn capture(&mut self, op: CaptureOp) -> Result<()> {
+	Ok(match op {
+	    CaptureOp::Push => {
+		self.captures.push(Vec::new());
+	    },
+	    CaptureOp::Pop  => {
+		if let Some(output) = self.captures.pop() {
+		    self.stack.push(Value::List(Shared::new(output)))?;
+		} else {
+		    Error::internal("capture stack underflow")?;
+		}
+	    },
+	    CaptureOp::Test => {
+		if let Ok(output) = self.stack.peek(0) {
+		    if let Value::List(l) = output {
+			self.stack.push(Value::Bool(l.len() > 0))?;
+		    } else {
+			Error::type_error("List", output)?;
+		    }
+		} else {
+		    Error::internal("capture stack underflow")?;
+		}
+	    },
+	    CaptureOp::Send => {
+		let atom = Atom::from("...");
+		let captures = self.stack.get_local(&atom)?;
+		if let Value::List(output) = captures {
+		    for value in output.iter() {
+			self.emit(value.clone())?;
+		    }
+		} else {
+		    Error::internal("This is not a capture list")?;
+		}
+	    }
+	})
+    }    
 
     // Try to index into the given collection.
     fn index(&mut self, t: IndexType) -> Result<()> {

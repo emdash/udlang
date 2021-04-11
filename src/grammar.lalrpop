@@ -345,7 +345,7 @@ CondExprClause: (ExprNode, ExprNode)
 // The subjunctive construct, as documented in github issue #20
 Suppose: StmtNode
     = "suppose" "(" <delegate:Expr> ")" <branch:BlockStmt> "else" <leaf:BlockStmt>
-    => ast.suppose(delegate, ast.expr_for_effect(branch), ast.expr_for_effect(leaf));
+    => ast.suppose(delegate, branch, leaf);
 
 
 // Single paramater in a function signature
