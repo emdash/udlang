@@ -1292,15 +1292,15 @@ mod tests {
             "#,
 	    ast.suppose(
 		ast.call(ast.id("she_may_love_you"), &[]),
-		ast.expr_for_effect(ast.block(&[
+		ast.block(&[
 		    ast.out(ast.s("She loves you,")),
 		    ast.effect_capture.clone(),
 		    ast.effect_capture.clone(),
 		    ast.effect_capture.clone()
-		], ast.void.clone())),
-		ast.expr_for_effect(ast.block(&[
+		], ast.void.clone()),
+		ast.block(&[
 		    ast.out(ast.s("Yesterdayyyyyy....."))
-		], ast.void.clone()))
+		], ast.void.clone())
 	    )
 	);
     }

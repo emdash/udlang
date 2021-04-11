@@ -256,7 +256,7 @@ pub enum Statement {
     ListIter(String, ExprNode, ExprNode),
     MapIter(String, String, ExprNode, ExprNode),
     While(ExprNode, StmtNode),
-    Suppose(ExprNode, StmtNode, StmtNode),
+    Suppose(ExprNode, ExprNode, ExprNode),
     EffectCapture,
 }
 
@@ -474,8 +474,8 @@ impl Builder {
     pub fn suppose(
 	&self,
 	delegate: ExprNode,
-	branch: StmtNode,
-	leaf: StmtNode
+	branch: ExprNode,
+	leaf: ExprNode
     ) -> StmtNode {
 	self.statement(Statement::Suppose(delegate, branch, leaf))
     }

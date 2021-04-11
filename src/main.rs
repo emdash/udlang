@@ -41,7 +41,7 @@ fn dump_ir(path: &str) {
 // Try to decode an ir::Value from a string
 fn decode(_input: std::io::Result<String>) -> Value {
     // XXX: really implement me
-    Value::Int(4)
+    Value::Bool(false)
 }
 
 

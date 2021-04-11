@@ -191,11 +191,13 @@ pub enum Instruction {
     Store(Atom),        // Store a value as a local variable.
     // XXX: Arg(u8)     // Load the corresponding argument by its position.
     // XXX: Capture(u8) // Load the corresponding capture by its index.
+    // XXX: Drop,       // Discard from stack
     Un(UnOp),           // Wraps all unary arithmetic and logic operations.
     Bin(BinOp),         // Wraps all binary arithmetic and logic operations.
     Call(CallType),     // Unconditional, conditional, and iterative.
     In,                 // Place input record on stack.
     Out,                // Send top of stack to output.
+    Capture(CaptureOp), // Instructions for the subjunctive mechanism.
     Debug,              // Inspect top of stack without altering it.
     Placeholder,        // This value is used in a partial application.
     Index(IndexType),   // Index into a collection.
@@ -233,6 +235,17 @@ pub enum IndexType {
     Map,
     Record,
     Module
+}
+
+
+// Variant of capture instruction for output captures.
+#[derive(Copy, Clone, Debug, PartialEq, Eq, Hash)]
+#[repr(u8)]
+pub enum CaptureOp {
+    Push,  // Push a new output capture
+    Pop,   // Pop the output capture
+    Test,  // Check if current output capture is non-empty.
+    Send   // Copy top-most capture downstream.
 }
 
 
@@ -795,8 +808,8 @@ impl Compiler {
 	   ListIter(i, l, b)   => self.compile_iter(&[i], l, b),
 	   MapIter(k, v, m, b) => self.compile_iter(&[k, v], m, b),
 	   While(_, _)         => Error::not_implemented("while loops"),
-	   Suppose(_, _, _)    => Error::not_implemented("subjunctives"),
-	   EffectCapture       => Error::not_implemented("effect captures")
+	   Suppose(c, b, l)    => self.compile_subjunctive(c, b, l),
+	   EffectCapture       => self.emit(Instruction::Capture(CaptureOp::Send))
 	}
     }
 
@@ -871,6 +884,44 @@ impl Compiler {
 	)?;
 	self.emit(Instruction::Call(CallType::ForEach))
 	    
+    }
+
+    // Compile the capture expression of a subjunctive statement.
+    //
+    // This wraps the expression in capture-stack instructions to
+    // expose the effects as data.
+    pub fn compile_capture_expr(&mut self, expr: &ExprNode) -> Result<()> {
+	self.emit(Instruction::Capture(CaptureOp::Push))?;
+	// XXX: Assumption here: expr has type void
+	self.compile_expr(expr)?;
+	self.emit(Instruction::Capture(CaptureOp::Pop))
+    }
+
+    // Try to copile a subjunctive
+    pub fn compile_subjunctive(
+	&mut self,
+	cond: &ExprNode,
+	branch: &ExprNode,
+	leaf: &ExprNode
+    ) -> Result<()> {
+	self.compile_capture_expr(cond)?;
+	let elipsis = self.compile_atom("...");
+	// XXX: This will store into the current scope, which means at most
+	// one subjunctive per scope, or we'll get redefinition errors
+	// at runtime..
+	//
+	// This really should be compiled like a block, i.e. as an
+	// IIFE, so that the ... is bound in a sub-scope.
+	self.emit(
+	    /* XXX: assumption: ...  is invalid identifier, therefore,
+	    will never collide with a valid identifier. */
+	    Instruction::Store(elipsis)
+	)?;
+	self.compile_variable_reference("...")?;
+	self.emit(Instruction::Capture(CaptureOp::Test))?;
+	self.compile_basic_block(branch)?;
+	self.compile_basic_block(leaf)?;
+	self.emit(Instruction::Call(CallType::IfElse))
     }
 
     // Dispatch to each expression variant.
@@ -1083,7 +1134,7 @@ impl Compiler {
     // These are used as the targets of control flow instructions.
     pub fn compile_basic_block(&mut self, body: &ExprNode) -> Result<()> {
 	eprintln!("compile basic block: {:#?}", body);
-	self.compile_lambda(&[], /* XXX */ &Node::new(ast::TypeTag::Any), body)
+	self.compile_lambda(&[], /* XXX */ &Node::new(ast::TypeTag::Void), body)
     }
 
     // Compile a function value.
