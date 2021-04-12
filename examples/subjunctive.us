@@ -1,0 +1,25 @@
+#! udlang
+
+version 0.1-pre_mvp;
+script "Subjunctive Example";
+
+
+input  Bool;
+output Str;
+
+
+proc she_loves_you(love_is_real: Bool) {
+   if (love_is_real) {
+      out "Yeah! ";
+   }
+}
+
+
+suppose(she_loves_you(in)) {
+  out "She loves you, ";
+  ...;
+  ...;
+  ...;
+} else {
+  out "Yesterdayyyyyyyy";
+}
