@@ -1,0 +1,15 @@
+#! udlang
+
+version 0.1-pre_mvp;
+script "List Example";
+
+let foo = [1, 2, 3, 4, 5];
+
+input  Int;
+output Int;
+
+func square(x: Int) -> Int {x * x}
+
+for x in foo {
+   out square(x) + in;
+}

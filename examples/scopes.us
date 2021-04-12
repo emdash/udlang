@@ -1,0 +1,29 @@
+#! udlang
+
+version 0.1-pre_mvp;
+script "Scope Example";
+
+input  Int;
+output Int;
+
+// This value should be captured.
+let x = 2;
+let y = 0;
+let z = 0;
+
+proc test(z: Int) {
+  let y = 3;
+  {
+    out x * y + z;
+  }
+}
+
+test(1); // should output 7.
+
+func addn(n: Int) -> ((n: Int) -> Int) {
+  (x: Int) -> Int {x + n}
+}
+
+let add1 = addn(1);
+
+out add1(10); // Should output 11.

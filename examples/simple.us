@@ -1,0 +1,17 @@
+#! udlang
+
+version 0.1-pre_mvp;
+script "Function calls";
+
+input  Int;
+output Int;
+
+func bar(c: Float) -> Float {
+    c - 1.0
+}
+
+func foo(c: Float) -> Float {
+     2.0 * bar(c)
+}
+
+out foo(in);
