@@ -255,7 +255,6 @@ pub enum Statement {
     TypeDef(String, TypeNode),
     ListIter(String, ExprNode, ExprNode),
     MapIter(String, String, ExprNode, ExprNode),
-    While(ExprNode, StmtNode),
     Suppose(ExprNode, ExprNode, ExprNode),
     EffectCapture,
 }

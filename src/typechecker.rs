@@ -372,10 +372,6 @@ impl TypeChecker {
                 sub.types.define(v, &item);
                 sub.eval_expr(&body)?;
             },
-            Statement::While(cond, body) => {
-                self.is_bool(cond)?;
-                self.check_statement(&body)?;
-            },
         };
         Ok(())
     }
