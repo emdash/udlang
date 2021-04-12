@@ -807,7 +807,6 @@ impl Compiler {
 	   TypeDef(id, t)      => self.compile_typedef(id, t),
 	   ListIter(i, l, b)   => self.compile_iter(&[i], l, b),
 	   MapIter(k, v, m, b) => self.compile_iter(&[k, v], m, b),
-	   While(_, _)         => Error::not_implemented("while loops"),
 	   Suppose(c, b, l)    => self.compile_subjunctive(c, b, l),
 	   EffectCapture       => self.emit(Instruction::Capture(CaptureOp::Send))
 	}
