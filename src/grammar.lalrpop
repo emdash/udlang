@@ -67,6 +67,7 @@ Decl: StmtNode = {
     Import,
     FuncDef,
     ProcDef,
+    TemplateDef,
     TypeDef,
     Let,
 }

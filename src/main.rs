@@ -5,7 +5,7 @@ use std::env;
 use udlang::grammar;
 use udlang::parser::parse;
 use udlang::ast::{Builder};
-use udlang::ir::{compile, Value};
+use udlang::ir::{compile, Value, Shared};
 use udlang::vm::run;
 
 use std::io::{
@@ -41,7 +41,10 @@ fn dump_ir(path: &str) {
 // Try to decode an ir::Value from a string
 fn decode(_input: std::io::Result<String>) -> Value {
     // XXX: really implement me
-    Value::Int(0)
+    Value::List(Shared::new(vec![
+	Value::Str("a".to_string()),
+	Value::Str("b".to_string())
+    ]))
 }
 
 
