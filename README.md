@@ -1,124 +1,192 @@
 # uDLang #
 
-uDLang is a minimalist, practical *functional* programming language.
+uDLang is a minimalist, pure functional programming language with
+curly-brace syntax. 
 
-It supports creating efficient *filters*: small programs which operate
-on structured data.
+As a command-line tool, uDLang targets operations on streams of JSON
+or other structured data.  As an embedded languge, uDLang functions as
+a principled scripting and configuration language.
 
-uDLang is both an embeddable DSL, as well as a stand-alone command-line
-tool for stream processing.
+### Hello World
 
-In a nutshell, uDLang is an alternative to traditional pipeline
-filters like `awk`, `sed`, and `perl` that is:
-- record-oriented, like `jq`, rather than line-oriented, like `awk` or
-  `sed`.
-- clear and readable, rather than terse and cryptic.
+```
+// hello_world.ud
+version 0.1-pre_mvp;
+script "hello world example";
+
+input  Void;
+output Str;
+
+out "Hello, World!\n";
+```
+
+To run:
+`cargo run -- examples/hello.ud`
+
+## Why uDLang ##
+
+On the command line, uDLang is a strongly-typed alternative to stream
+processing tools like `jq`, `awk` or `sed`.
+
+As an embedded language, uDLang is a strongly-typed alternative to lua
+or python for scripting and configuration.
+
+uDLang started as a DSL for
+[uDash](https://github.com/emdash/udashboard). Over time, the language
+became sufficiently general to have a life outside of uDashboard.
+
+### Why the *name* uDLang?
+
+The name is short for uDashboard Language. It's a "working title", and
+I'm open to changing it.
+
+### Overview
+
+uDLang is:
+- record-oriented.
 - strongly, statically typed.
 - purely functional.
-- designed with security and performance in mind.
+- aims for safety, correctness, and readability over performance or
+  brevity.
+
+Features:
+- static type checking.
+- immutable data.
+- all side effects are explicit.
+- structural typing.
+- pattern matching.
+- destructuring assignments.
+- partial evaluation.
 
 uDLang models operations on structured data in the abstract,
-independent of a specific wire format. Anything goes, so long as it
-isomorphic to JSON.
+independent of a specific wire format. Data can be converted from
+structured formats, like JSON, BSON, msgpack, yaml, or plain text, or
+your own application-specific types.
 
+uDLang extends primitive JSON types -- strings, numbers, lists, and
+maps with higher-level notions for stronger static guarantees.
 For a more detaled discussion of uDlang's design, see `manual.md`.
+
+uDLang resembles
+[Koka](https://koka-lang.github.io/koka/doc/index.html) in both syntax
+and conceptualy, though the two projects have no direct relationship.
 
 **uDLang is a work in progress, not all features documented here are
 implemented**.
 
-## What uDLang Is 
+### What uDLang is not
 
-uDLang can be summed up like this: take the Elm out of the browser and
-put it into a unix pipleine. Wrap it up in a syntax that feels more
-friendly to those whose eyes have spent decades staring at C-family
-languages. Then see what I can build with it. It is the marriage of
-functional programming, MVC, and the "unix philosophy".
+uDLang is not a systems language. uDLang is not yet production-ready.
 
-The idea is that most applications reduce to a "uDLang sandwich": A
-bit of code to collect data; another bit of code which executes
-commands; and uDLang in the middle, transforming the input into the
-output.
+### Sources of Inspiration
 
-This separation of concerns means that each piece can be easily tested
-in isolation, while the functional semantics of uDLang itself provide
-freedom to explore various optimization strategies without breaking
-your code. Alternative implementations could one day adapt uDLang to
-exotic hardware, like FPGAs and GPUs.
-
-The focus on short-running filters means that resource usage should be
-deterministic with respect to the input, staying within a high water
-mark that can at least be characterized experimentally, if not
-predicted analytically.
-
-The focus on records and streaming leaves open the possibility for
-very cache-efficient implementations in the future.
-
-The focus on functional semantics means uDLang can benefit from the
-vast trove of academic literature which has informed the design of
-languages like Haskell and Rust.
-
-uDLang is:
-- functional
-- immutable
-- value-oriented
-- completely statically-typed
-- concise, without being cryptic
-- portable
-- embeddable
-- a data-description language
-
-## What uDLang is not
-
-uDLang is not a *systems* language. You cannot write an operating
-system entirely in uDLang. But you could, in theory, write *parts* of
-an operating system in it, given a suitable implementation.
-
-You cannot perform IO directly in uDLang. IO facilities are provided
-by the implementation, and / or embedding environment.
-
-You cannot interact directly with hardware. uDLang you cannot access
-memory directly. And all data is immutable. uDLang omits these
-capabilities because they are irrelevant to the business logic of your
-application.
-
-Any uDLang code will exist as part of a larger system, even if it's
-just the unix kernel and shell.
-
-uDLang is not production-ready today. But I hope it will useful for
-casual coding soon, and I hope some day uDLang is capable of running
-in a production environment.
-
-## Why uDLang ##
-
-uDLang started as a quick-and-dirty DSL for uDash, another project of
-mine. Over time, it snowballed into a deep dive into compilers, type
-theory, and the Rust programming language.
-
-In the course of all this, I had the idea that a small, pure,
-functional programming language could work quite well in the context
-of stream processing, and so I decided to explore the idea further
-here.
-
-As hinted at above, I think there
-
-My hope is that all this will someday prove useful to others.
-
-uDLang has many sources of inspiration, in addition to those already listed:
 - FlowJS, for the syntax and semantics of type annotations.
 - OilShell, another project bringing a modern approach to a traditional domain.
 - ML-family languages.
 - JavaScript, and its data-oriented subset, JSON.
 - JSON Schema
-- CDL, the most minimal approach to language design I have yet encountered, and well worth pondering.
+- CDL, the most minimal approach to language design I have yet
+  encountered, and well worth pondering.
 - The Elm project.
+- Rust, the implementation language.
+- [Koka](https://koka-lang.github.io/koka/doc/index.html) -- a case of
+  convergent evolution. Koka is shockingly similar to uDLang, despite
+  being an entirely separate project.
 
-## Why the *name* uDLang?
+## Project Status and Roadmap ##
 
-The name is short for uDashboard Language. That's it. It's a working
-title, and I'm open to changing it if something more apropos can be
-found.
+The current version is `0.1-pre_mvp`.
 
-## A Simple Example ##
+ - Grammar: about 95% done.
+ - Runtime: about 80% done.
+ - Typechecker: TBD.
+ - JSON / msgpack support: TBD
+ - Exceptions: TBD
+
+The goal for the MVP milestone is that uDLang should be minimally
+useful for casual coding. Subsequent releases will introduce
+optimizations that benefit common use-cases as they emerge.
+
+uDLang is in its infancy. If the ideas behind uDLang exite you,
+contributions are welcome.  If you don't know where to start, consider
+submitting test cases or example scripts, or implementing support for
+your favorite encoding / framing format.
+
+How might you use a tool like uDLang? I'd love to hear from you!
+
+## More Examples
+
+### Input / Output
+
+```
+version 0.1-pre_mvp;
+script "input example";
+input  Str;
+output Str;
+
+// uDLang has one source for runtime values, the `in` expression.
+out "Hello, " + in + "\n";
+
+```
+
+### Pattern Matching
+
+```
+version 0.1-pre_mvp;
+script "pattern matching example";
+input  Str;
+output Str;
+
+// uDLang supports pattern matching 
+out match in {
+  case "Hello":     "Hello, World!\n";
+  case "Goodnight": "Goodnight, Moon!\n";
+};
+
+```
+
+### JSON Processing
+
+This example converts an array of point-like records to a record of
+arrays, i.e this `[{x: 0, y: 1}, {x: -1, y: 7}]`, becomes `{x: [0.0,
+-1.1], y: [1.0, 7.0], z:[0.0, 0.0]}`.
+
+```
+version 0.1-pre_mvp;
+script "json processing example";
+
+// Records in uDLang are a subtype of maps.
+type Point: record {
+  field  x: Int;
+  field  y: Int;
+  // This field is optional.
+  field? z: Int;
+};
+
+// This script expects a list of Point records as input.
+input [Point];
+
+// The script will convert the input list to this output record.
+output record {
+  field x: [Float];
+  field y: [Float];
+  // z is not optional here.
+  field z: [Float];
+};
+
+// Construct the output value and send it downstream.
+out {
+  // $.x is a partial function, short-hand for:
+  //   `(i: Point) -> Float {i.x as Float}`
+  x: in.map($.x as Float), 
+  y: in.map($.y as Float),
+  // since `in.z` may be null, we need to supply a default value.
+  z: in.map($.z as float ? 0.0)
+};
+
+```
+
+### HTML Templating ###
 
 Let's imagine that we are writing a todo-list web-application. As part
 of this, we want to convert a JSON payload received from a web service
@@ -136,7 +204,7 @@ into legible HTML. Let's say our JSON payload looks like this:
 }
 ```
 
-A uDLang filter to render the todo list into html might look like this:
+A uDLang script to to render the todo list might look like this:
 
 ```
 // todo.ud
@@ -144,19 +212,33 @@ A uDLang filter to render the todo list into html might look like this:
 // uDLang is evolving, by mandating a version string, we guard our code
 // against breaking changes to the language.
 version 0.1-pre_mvp;
+script "Todolist Example";
 
-// Import some helper functions from our html companion library (see below), as well
-// as the library itself.
+// Import some helper functions from our html companion library (see below),
+// including the library itself.
 import html.{_, html, head, title, body, h1, h2, ul, li, div, text};
 
-// Define the type of a single todo-list item.
+// Define a type alias for a single todo-list item.
 // Type names must start with an upper-case letter.
-type TodoItem: {
+type TodoItem: record {
   field id: Int,
   field name: Str,
+  // uDLang supports "string enums" similar to FLowJS.
   field status: "complete" |  "incomplete" | "blocked";
-  // Blocker is an optional field, as opposed to a field with an option value.
   field? blocker: Int;
+
+  // Records can define methods, which take an implicit self parameter.
+  method format() {
+    // uDLang supports string interpolation.
+    li({class: "todo-item ${self.status}"}) {
+      text(self.name);
+      if (self.blocker?) {
+        div({class: "alert"}) {
+          text("Blocked on ${items[self.blocker].name}");
+        };
+      }
+    };
+  };
 };
 
 // Declare the shape of the input.
@@ -165,31 +247,14 @@ input {field name: Str; field items: [TodoItem]};
 // Declare the output type, which is defined by the HTML helper library.
 output html.Output;
 
-// Helper function to format single item in our list.
-proc format_item(item: TodoItem) {
-  // The item's status is appended directly to the element's class.
-  li({class: "todo-item ${item.status}"}) {
-    text(item.name);
-    // .?. is the *existential* operator, which is like `.` but merely tests
-    // if an optional field is present. Access to an optional field must be guarded
-    // in some way. The goal is to statically enforce this.
-    if (item.?.blocker) {
-       let blocker = items[item.blocker];
-       div({class: "alert"}) {
-           text("Blocked on ${blocker.name}");
-       };
-    }
-  };
-};
-
 // Format the entire document. As with many scripting languages, there is no
 // specific program entry point, such as a function named `main`.
 //
 // All allusions to HTML syntax here (`head`, `body`, etc) are uDLang
 // functions living in the helper library.
 //
-// uDLang supports a "template" syntax for calling functions with trailing block, 
-// a feature borrowed from Ruby.
+// uDLang supports a "template" syntax for calling functions with trailing 
+// block, a feature borrowed from Ruby.
 html() {
    head() {
      title() {text(in.name);};
@@ -200,7 +265,7 @@ html() {
      div({class: "todo-list"}) {
        ul() {
          for item in in.items {
-           format_item(item);
+           item.format();
          };
        };
      };
@@ -220,29 +285,26 @@ Now let's try it again on some invalid input:
 
  **TBD**
 
-## Going Deper ##
+#### The HTML Library ####
 
-We've seen that uDLang can serve as an HTML template engine, but it is
-neither limited to, nor primarily intended for, this purpose. The
-`html` module is simply user library written in udlang itself. 
-
-To get a feel for the power and simplicity of uDLang, let's explore
-the `html` library:
+The `html` module is just a library written in udlang:
 
 ```
 // html.ud
-version: 0.1-pre_mvp;
+version 0.1-pre_mvp;
+lib "Simple Html Formatting Library";
 
 // Declare the output type for this library.
 type Output: Str;
 
-// Converts a string to an html-escaped format, implementation omitted for brevity.
+// Converts a string to an html-escaped format, implementation omitted for 
+// brevity.
 func quote(text: Str) -> Str = { /* ... */ };
 
-// A template allows flexible composition of functions that produce side-effects.
-// Here, the `using` syntax is just sugar for binding `children` to a closure 
-// argument. The `template` keyword is intended mainly as hint for linters.
-template element(tag: Str, attrs: Map<Str> = {}) using children {
+// A template allows flexible composition of functions that produce 
+// side-effects. Here, the `using` syntax is just sugar for binding `content` 
+// to a closure.
+template element(tag: Str, attrs: Map<Str> = {}) using content {
   // Begin by writing the opening tag.
   out "<${tag} ";
   
@@ -251,122 +313,103 @@ template element(tag: Str, attrs: Map<Str> = {}) using children {
     out " ${quote(attr)}=${quote(value)}";
   }
   
-  // uDLang supports a back-tracking mechanism called a *subjunctive*.
-  //
-  // Here it is used to cleanly handle the syntax for empty HTML elements.
-  // The side effects caused by evaluating `children()` will appear in the position of 
-  // the elipsis in the final output.
-  suppose (children()) {
+  // This back-tracking mechanism helps us cleanly handle the empty element
+  // edge case.
+  suppose (content()) {
+    // Non-empty case
     out ">";
     ...;
     out "</${tag}>";
   } otherwise {
+    // Empty case
     out "/>";
   };
 };
 
-// Make this template definition available to importing scripts.
+// uDLang requires libraries to explicitly export definitions.
 export Output;
 export element;
 
-// With this general definition of an HTML element in hand, we can specialize it for
-// standard tags. uDLang supports *partial function application* via the wildcard operator.
+// With this general definition of an HTML element in hand, we can specialize it
+// for standard tags.
+//
+// The $ here is the "placeholder" operator, which triggers partial evaluation.
 export html = element("html", $, $);
 export head = element("head", $, $);
 export body = element("body", $, $);
-export div = element("div", $, $);
+export div  = element("div",  $, $);
 
-// Here we supply an empty block to prevent callers from accidentally
-// including children.
-export br = element("div", $) {};
+// `br` cannot contain content. Here we supply an empty
+// block to prevent callers from accidentally
+// passing a closure
+export br   = element("div", $) {};
 // ... remaining elements elided for brevity.
-
 ```
 
-## Side Effects ##
- 
-At this point, you might be asking yourself: if uDLang is
-*functional*, then why does this example feel so imperative? And
-what's all this noise about *side-effects* in the comments?
+## uDLang and Koka
 
-The essence of so-called *functional* programming is less about the
-use of functions, and more about the *absence of state* and the
-careful management of *side-effects*. The design of uDLang simply does
-not allow for mutable state to exist within the program.
+I've recently become aware of Koka, a language which shares many
+superficial similarities with uDLang. There is a great deal of
+overlap, and I'm very excited by the ideas presented in Koka. In the
+future, I may evolve uDLang in ways that align it more closely with
+Koka. As it stands right now, uDLang is part of the Rust ecosystem.
 
-Side effects are an unavoidable consequence of programming in the real
-world. uDLang makes no attempt to hide them: instead, uDLang *models*
-side-effects as *data*.  Since these side-effects are, in fact, just
-data to be consumed downstream, they cannot influence the behavior of
-the uDLang script itself, with one important exception.
+I am not terribly familiar with Koka, but here's a summary of the
+obvious differences:
 
-This means that all functions in uDLang are pure functions, even those
-evaluated purely for the output they produce.
+### Effects
 
-The output of a uDLang program is merely the concatenation of the
-side-effects it computes.
+Koka's effect system is strictly more expressive than uDLang's
 
-For more information, see `manual.md`.
+- uDLang has one effect: the `out` statement.
+- uDLang effects cannot be "handled" within the uDLang script --
+  they are values which are only externally visible.
+- Koka's effects are syntactic sugar around continuations, allowing
+  for non-linear control flow.
+- Koka implements exceptions through its effect system, while uDLang
+  will implement exceptions as a language feature.
+- Koka appears to be a general-purpose applications or even systems
+  language that targets native compilation, while uDLang aims to be a
+  small, embeddable language.
 
-## Language Design Goals ##
+### Trailing Lambdas
 
- - Make decades of academic research available for practical use.
- - Wrap functional semantics in a "mainstream" syntax.
- - Type-safe handling of strucured data.
- - Abstract away low-level details.
- - Allow for efficient execution via interpretation, ahead-of-time
-   compilation, or JIT.
- 
-## Language Features (Proposed for MVP) ##
+Both Koka and uDLang support "trailing lambdas", but support for this
+in uDLang is limited to procedure calls due to limitations in the
+parser, while Koka supports them more generally.
+  
+### Dot Notation
 
- - Curly-brace syntax friendly to a mainstream audience, and compatible with JSON.
- - Destructuring assignments.
- - Partial Evaluation.
- - Expressive type system that models real-world data.
-    - Strong typing with generics.
-    - HKT (Higher Kinded Types) *Targeted for 0.2 and later*
-    - ADTs (via union types)
- - String interpolation.
- - Absolutely no mutable state allowed. Period.
- - Principled system for managing side-effects.
- - Templates.
- - Semantics allowing for deep analysis and optimization.
+Koka defines method call expressions like `x.f(...)`  to mean: `f(x,
+...)`, while udlang defines it to mean: `x[Atom("f")](...)`.
+  
+uDLang aims to guarantee that this will optimize to a direct function
+call, the distinction is mainly how each language decides which
+function to call.
 
-## Reference Implementation Goals ##
+Koka's notion allows defining "methods" on a type externally, whereas
+uDLang does not allow for this.
 
-Core
+In Koka, it's not clear you can refer to a method's function value
+directly (without calling it), while in uDLang you can.
 
- - small, maintainable library written in entirely in safe Rust.
- - easily embedded in an application context.
- - low interpreter overhead.
- - predictable resource usage.
- - fast interpreter startup time.
- - limited optimizations:
-   - inlining
-   - const-folding
-   - CSE
- - for now, focus on correctness over speed.
-  - develop comprehensive test suite.
+### Record Processing
 
-Command-line tool:
+uDLang is record-oriented, while Koka has no such notion.
+- uDLang scripts are kernels operating on a stream of records.
+- the `in` keyword, which always binds to the current input record,
+  is a construct unique to uDLang as far as I know.
+  - as are the `input`, and `output` declarations.
 
- - targets for the most common use case for uDLang as a unix pipeline filter.
- - can flexibly switch between different encodings and memory management strategies.
- - native support for text formats like JSON, as well as binary formats msgpack.
- - optimized binary framing protocol for efficient operation in "release mode".
- - powerful debugging facilities.
+### Other features
 
-## Project Status ##
+uDLang has an experimental construct `suppose` which is used for
+certain edge cases in tree-shaped data. It's not yet clear to me if
+Koka's effect system can express this construct.
 
-The current version is `0.1-pre_mvp`.
+Koka uses automatic semicolon insertion similar to EcmaScript,
+whereas uDLang has no plans to implement this feature, or to
+otherwise eliminate semicolons from the grammar.
 
-uDLang is in its infancy, (i.e. vaporware). If the ideas behind uDLang exite you, contributions are welcome. 
-If you don't know where to start, consider submitting test cases or example scripts. How might you use
-a tool like uDLang? I'd love to hear from you!
-
- - Grammar: incomplete
- - Runtime: to be ported from uDashbord
- - Codegen: non-existent.
- - Typechecker: very rough
- - Command line tool: non-existent.
- 
+DLang supports partial evaluation via the `$` operator, while it's not
+clear that Koka has any mechanism for partial evaluation.
