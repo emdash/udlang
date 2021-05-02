@@ -230,14 +230,13 @@ type TodoItem: record {
   // Records can define methods, which take an implicit self parameter.
   method format() {
     // uDLang supports string interpolation.
-    li({class: "todo-item ${item.status}"}) {
+    li({class: "todo-item ${self.status}"}) {
       text(self.name);
-      if (self.blocker != null) {
-        let blocker = items[item.blocker];
+      if (self.blocker?) {
         div({class: "alert"}) {
-          text("Blocked on ${blocker.name}");
+          text("Blocked on ${items[self.blocker].name}");
         };
-	  }
+      }
     };
   };
 };
@@ -361,6 +360,7 @@ obvious differences:
 ### Effects
 
 Koka's effect system is strictly more expressive than uDLang's
+
 - uDLang has one effect: the `out` statement.
 - uDLang effects cannot be "handled" within the uDLang script --
   they are values which are only externally visible.
@@ -374,9 +374,9 @@ Koka's effect system is strictly more expressive than uDLang's
 
 ### Trailing Lambdas
 
-- Both Koka and uDLang support "trailing lambdas", but support for
-  this in uDLang is limited to procedure calls due to limitations in
-  the parser, while Koka supports them more generally.
+Both Koka and uDLang support "trailing lambdas", but support for this
+in uDLang is limited to procedure calls due to limitations in the
+parser, while Koka supports them more generally.
   
 ### Dot Notation
 
@@ -403,11 +403,13 @@ uDLang is record-oriented, while Koka has no such notion.
 
 ### Other features
 
-- uDLang has an experimental construct `suppose` which is used for
-  certain edge cases in tree-shaped data. It's not yet clear to me if
-  Koka's effect system can express this construct.
-- Koka uses automatic semicolon insertion similar to EcmaScript,
-  whereas uDLang has no plans to implement this feature, or to
-  otherwise eliminate semicolons from the grammar.
-- uDLang supports partial evaluation via the `$` operator, while it's
-  not clear that Koka has any mechanism for partial evaluation.
+uDLang has an experimental construct `suppose` which is used for
+certain edge cases in tree-shaped data. It's not yet clear to me if
+Koka's effect system can express this construct.
+
+Koka uses automatic semicolon insertion similar to EcmaScript,
+whereas uDLang has no plans to implement this feature, or to
+otherwise eliminate semicolons from the grammar.
+
+DLang supports partial evaluation via the `$` operator, while it's not
+clear that Koka has any mechanism for partial evaluation.
