@@ -1,11 +1,8 @@
 # uDLang #
 
-uDLang is a minimalist, pure functional programming language with
-curly-brace syntax. 
+uDLang is a type-safe, pure-functional alternative to `awk`, which processes structured data on the command line over unix pipes.
 
-As a command-line tool, uDLang targets operations on streams of JSON
-or other structured data.  As an embedded languge, uDLang functions as
-a principled scripting and configuration language.
+The core uDLang language is a minimalist, pure language with JS-like syntax. 
 
 ### Hello World
 
@@ -28,59 +25,47 @@ To run:
 On the command line, uDLang is a strongly-typed alternative to stream
 processing tools like `jq`, `awk` or `sed`.
 
-As an embedded language, uDLang is a strongly-typed alternative to lua
-or python for scripting and configuration.
-
-uDLang started as a DSL for
-[uDash](https://github.com/emdash/udashboard). Over time, the language
-became sufficiently general to have a life outside of uDashboard.
+uDLang started as a DSL for [uDash](https://github.com/emdash/udashboard).
 
 ### Why the *name* uDLang?
 
 The name is short for uDashboard Language. It's a "working title", and
-I'm open to changing it.
+I'm open to changing it. Or maybe it stands for "universal data language".
 
 ### Overview
 
 uDLang is:
+- a pipeline filter.
 - record-oriented.
-- strongly, statically typed.
 - purely functional.
-- aims for safety, correctness, and readability over performance or
-  brevity.
+- statically typed.
 
-Features:
-- static type checking.
-- immutable data.
-- all side effects are explicit.
-- structural typing.
-- pattern matching.
-- destructuring assignments.
+Planned Features:
+- bidirectional type inference
+- structural types
+- pattern matching and destructuring
 - partial evaluation.
 
-uDLang models operations on structured data in the abstract,
-independent of a specific wire format. Data can be converted from
-structured formats, like JSON, BSON, msgpack, yaml, or plain text, or
-your own application-specific types.
+uDLang operates on binary data.
+- The input is a stream of binary records (in msgpack)
+- uDLang defines a native protocol for record segmentation.
+- uDLang values are a superset of msgpack values.
+- udlang will ship with a suite of companion tools for working with this format.
 
-uDLang extends primitive JSON types -- strings, numbers, lists, and
-maps with higher-level notions for stronger static guarantees.
-For a more detaled discussion of uDlang's design, see `manual.md`.
-
-uDLang resembles
-[Koka](https://koka-lang.github.io/koka/doc/index.html) in both syntax
-and conceptualy, though the two projects have no direct relationship.
+uDLang's syntax resembles that of [Koka](https://koka-lang.github.io/koka/doc/index.html)
 
 **uDLang is a work in progress, not all features documented here are
 implemented**.
 
 ### What uDLang is not
 
-uDLang is not a systems language. uDLang is not yet production-ready.
+- a general-purpose language.
+- a systems language.
+- fully implemented.
 
 ### Sources of Inspiration
 
-- FlowJS, for the syntax and semantics of type annotations.
+- FlowJS, for the syntax of type annotations.
 - OilShell, another project bringing a modern approach to a traditional domain.
 - ML-family languages.
 - JavaScript, and its data-oriented subset, JSON.
@@ -90,8 +75,8 @@ uDLang is not a systems language. uDLang is not yet production-ready.
 - The Elm project.
 - Rust, the implementation language.
 - [Koka](https://koka-lang.github.io/koka/doc/index.html) -- a case of
-  convergent evolution. Koka is shockingly similar to uDLang, despite
-  being an entirely separate project.
+  convergent evolution. Koka syntax is similar to uDLang, despite
+  being developed independently.
 
 ## Project Status and Roadmap ##
 
@@ -100,17 +85,16 @@ The current version is `0.1-pre_mvp`.
  - Grammar: about 95% done.
  - Runtime: about 80% done.
  - Typechecker: TBD.
- - JSON / msgpack support: TBD
+ - msgpack support: TBD
  - Exceptions: TBD
 
 The goal for the MVP milestone is that uDLang should be minimally
-useful for casual coding. Subsequent releases will introduce
-optimizations that benefit common use-cases as they emerge.
+useful for casual coding.
+
+Subsequent releases will introduce optimizations and convenience features.
 
 uDLang is in its infancy. If the ideas behind uDLang exite you,
-contributions are welcome.  If you don't know where to start, consider
-submitting test cases or example scripts, or implementing support for
-your favorite encoding / framing format.
+contributions are welcome.
 
 How might you use a tool like uDLang? I'd love to hear from you!
 
@@ -134,7 +118,7 @@ out "Hello, " + in + "\n";
 ```
 version 0.1-pre_mvp;
 script "pattern matching example";
-input  Str;
+input  "Hello" | "Goodnight";
 output Str;
 
 // uDLang supports pattern matching 
@@ -145,7 +129,7 @@ out match in {
 
 ```
 
-### JSON Processing
+### Processing Structured Data
 
 This example converts an array of point-like records to a record of
 arrays, i.e this `[{x: 0, y: 1}, {x: -1, y: 7}]`, becomes `{x: [0.0,
@@ -153,35 +137,31 @@ arrays, i.e this `[{x: 0, y: 1}, {x: -1, y: 7}]`, becomes `{x: [0.0,
 
 ```
 version 0.1-pre_mvp;
-script "json processing example";
+script "Convert a list of points to a record of parallel arrays";
 
-// Records in uDLang are a subtype of maps.
-type Point: record {
-  field  x: Int;
-  field  y: Int;
-  // This field is optional.
-  field? z: Int;
+// A point is a map with numeric keys
+type Point: {
+  x: I32 | F32;
+  y: I32 | F32;
+  z: I32 | F32;
 };
 
-// This script expects a list of Point records as input.
+// Input is a list of Points.
 input [Point];
 
-// The script will convert the input list to this output record.
-output record {
-  field x: [Float];
-  field y: [Float];
-  // z is not optional here.
-  field z: [Float];
+// Output is a record with parallel arrays.
+output {
+  x: [F32];
+  y: [F32];
+  z: [F32];
 };
 
-// Construct the output value and send it downstream.
+// Construct output record and write it to the output.
 out {
-  // $.x is a partial function, short-hand for:
-  //   `(i: Point) -> Float {i.x as Float}`
-  x: in.map($.x as Float), 
-  y: in.map($.y as Float),
-  // since `in.z` may be null, we need to supply a default value.
-  z: in.map($.z as float ? 0.0)
+  // $.x is a partial function, short-hand for: `(p) => {p.x}`
+  x: in.map($.x as F32), 
+  y: in.map($.y as F32),
+  z: in.map($.z as F32)
 };
 
 ```
@@ -190,7 +170,7 @@ out {
 
 Let's imagine that we are writing a todo-list web-application. As part
 of this, we want to convert a JSON payload received from a web service
-into legible HTML. Let's say our JSON payload looks like this:
+into legible HTML.
 
 ```
 {
@@ -216,29 +196,32 @@ script "Todolist Example";
 
 // Import some helper functions from our html companion library (see below),
 // including the library itself.
-import html.{_, html, head, title, body, h1, h2, ul, li, div, text};
+import html.{_, html, head, title, body, h1, h2, ul, li, div, quote};
 
 // Define a type alias for a single todo-list item.
 // Type names must start with an upper-case letter.
-type TodoItem: record {
-  field id: Int,
-  field name: Str,
+type TodoItem: {
+  id: U32,
+  name: Str,
   // uDLang supports "string enums" similar to FLowJS.
-  field status: "complete" |  "incomplete" | "blocked";
-  field? blocker: Int;
+  status: "complete" |  "incomplete" | "blocked";
+  blocker: Int?;
+};
 
-  // Records can define methods, which take an implicit self parameter.
-  method format() {
-    // uDLang supports string interpolation.
-    li({class: "todo-item ${self.status}"}) {
-      text(self.name);
-      if (self.blocker?) {
-        div({class: "alert"}) {
-          text("Blocked on ${items[self.blocker].name}");
+let alert = div({class: "alert"}, content = "Blocked on: " + $);
+
+// We can define methods on record types with `impl`.
+impl TodoItem {
+   func format() -> Str {
+     // uDLang supports string interpolation.
+     li({class: "todo-item ${self.status}"}) {
+       quote(self.name) + "" + match (self.blocker) {
+         case None:          "";
+         case Some(blocker): alert(items[blocker].name)
         };
       }
-    };
-  };
+    }
+  }
 };
 
 // Declare the shape of the input.
@@ -255,27 +238,27 @@ output html.Output;
 //
 // uDLang supports a "template" syntax for calling functions with trailing 
 // block, a feature borrowed from Ruby.
-html() {
+out html() {
    head() {
-     title() {text(in.name);};
-   };
-
-   body() {
-     h1() {text(in.name)};
+     title() {in.name}
+   } + body() {
+     h1() {text(in.name)} +
      div({class: "todo-list"}) {
        ul() {
-         for item in in.items {
-           item.format();
-         };
-       };
-     };
-   };
-};
+         in.items.map($.format()).join("")
+       }
+     }
+   }
+}
 ```
 
 Let's run this example:
 
- `$ udlang todo.md < example.json`
+ `$ udlift --json --oneshot | udlang todo.md | udlower --text | tidy < example.json`
+ 
+Where
+- `udlift --json --oneshot` reads from stdin, outputs the contents as single record, and exits.
+- `udlower --text` outputs a plain text string followed by a newline for each msgpack string it receives.
 
 We obtain the following output:
 
@@ -283,7 +266,24 @@ We obtain the following output:
 
 Now let's try it again on some invalid input:
 
+
+`bad.json`
+```
+{
+  "name": "Brandon's Tasks"
+  "items": [
+    {"id": -1, "name": "I am malformed"}
+  ]
+}
+```
+
+The input record is invalid, because the id field is signed.
+
  **TBD**
+ 
+The udlang interpreter rejects the input stream, because it has the wrong shape.
+
+`udlift` attempts to deduce the shape of the input, but you can also specify an explicit schema.
 
 #### The HTML Library ####
 
@@ -301,29 +301,29 @@ type Output: Str;
 // brevity.
 func quote(text: Str) -> Str = { /* ... */ };
 
-// A template allows flexible composition of functions that produce 
-// side-effects. Here, the `using` syntax is just sugar for binding `content` 
-// to a closure.
-template element(tag: Str, attrs: Map<Str> = {}) using content {
+// This is a generic function which formats a single element.
+//
+// Child elements are provided by the `content` function argument.
+func element(
+  tag: Str, 
+  attrs: Map<Str> = {},
+  allowChildren: Bool = true
+  content: () -> Str = () => "",
+) -> Output {
   // Begin by writing the opening tag.
-  out "<${tag} ";
+  let attributes = attrs
+     .map((k, v) => quote(k) + "=" + quote(v)})
+     .join(", ");
   
-  // Append any attributes to the output.
-  for (attr, value) in attrs {
-    out " ${quote(attr)}=${quote(value)}";
+  let opening = ["<", tag, " ", attrs, ">"].join("");
+  let closing = ["</", tag, ">"].join("");
+  
+  if (allowChildren) {
+    [opening, content(), close].join("")
+  } else match (content()) {
+    case "": opening,
+    case x:  throw "Content must be empty, 
   }
-  
-  // This back-tracking mechanism helps us cleanly handle the empty element
-  // edge case.
-  suppose (content()) {
-    // Non-empty case
-    out ">";
-    ...;
-    out "</${tag}>";
-  } otherwise {
-    // Empty case
-    out "/>";
-  };
 };
 
 // uDLang requires libraries to explicitly export definitions.
@@ -331,85 +331,62 @@ export Output;
 export element;
 
 // With this general definition of an HTML element in hand, we can specialize it
-// for standard tags.
-//
-// The $ here is the "placeholder" operator, which triggers partial evaluation.
-export html = element("html", $, $);
-export head = element("head", $, $);
-export body = element("body", $, $);
-export div  = element("div",  $, $);
+// for standard tags. `$` is the "placeholder" for partial application.
+export html = element("html", $) $;
+export head = element("head", $) $;
+export body = element("body", $) $;
+export div  = element("div",  $) $;
 
-// `br` cannot contain content. Here we supply an empty
-// block to prevent callers from accidentally
-// passing a closure
-export br   = element("div", $) {};
+// These elements cannot contain content.
+export br   = element("br", $, false);
+export hr   = element("hr", $, false);
 // ... remaining elements elided for brevity.
 ```
 
 ## uDLang and Koka
 
-I've recently become aware of Koka, a language which shares many
-superficial similarities with uDLang. There is a great deal of
-overlap, and I'm very excited by the ideas presented in Koka. In the
-future, I may evolve uDLang in ways that align it more closely with
-Koka. As it stands right now, uDLang is part of the Rust ecosystem.
-
-I am not terribly familiar with Koka, but here's a summary of the
-obvious differences:
+I became aware of Koka after starting uDLang. The a language is
+superficially similar to uDLang. I am not terribly familiar with
+Koka, but here's a summary of the obvious differences.
 
 ### Effects
 
-Koka's effect system is strictly more expressive than uDLang's
-
-- uDLang has one effect: the `out` statement.
-- uDLang effects cannot be "handled" within the uDLang script --
-  they are values which are only externally visible.
-- Koka's effects are syntactic sugar around continuations, allowing
-  for non-linear control flow.
+Koka's effect system is more expressive than uDLang's
+- uDLang has one effect: the `out` statement, which has a very specific meaning.
+- uDLang effects cannot be "handled" within the uDLang script: script evaluation terminates when
+  execution reaches an `out` statement.
 - Koka implements exceptions through its effect system, while uDLang
-  will implement exceptions as a language feature.
+  will implement exceptions as a core language feature.
 - Koka appears to be a general-purpose applications or even systems
-  language that targets native compilation, while uDLang aims to be a
-  small, embeddable language.
+  language that targets native compilation, while uDLang is a pipeline filter.
 
 ### Trailing Lambdas
 
-Both Koka and uDLang support "trailing lambdas", but support for this
-in uDLang is limited to procedure calls due to limitations in the
-parser, while Koka supports them more generally.
+Both Koka and uDLang support "trailing lambdas" on function calls.
   
 ### Dot Notation
 
 Koka defines method call expressions like `x.f(...)`  to mean: `f(x,
-...)`, while udlang defines it to mean: `x[Atom("f")](...)`.
+...)`, while udlang defines it to mean: `x['f](...)`.
   
 uDLang aims to guarantee that this will optimize to a direct function
-call, the distinction is mainly how each language decides which
-function to call.
-
-Koka's notion allows defining "methods" on a type externally, whereas
-uDLang does not allow for this.
+call at runtime.
 
 In Koka, it's not clear you can refer to a method's function value
 directly (without calling it), while in uDLang you can.
 
 ### Record Processing
 
-uDLang is record-oriented, while Koka has no such notion.
+- uDLang is record-oriented, while Koka has no such notion.
 - uDLang scripts are kernels operating on a stream of records.
-- the `in` keyword, which always binds to the current input record,
-  is a construct unique to uDLang as far as I know.
-  - as are the `input`, and `output` declarations.
+- the script runs to completion for each input record received
+  - the `in` keyword, binds to the current input record
+  - the `out` keyword yields the given expression and ends the cycle.
 
 ### Other features
 
-uDLang has an experimental construct `suppose` which is used for
-certain edge cases in tree-shaped data. It's not yet clear to me if
-Koka's effect system can express this construct.
-
 Koka uses automatic semicolon insertion similar to EcmaScript,
-whereas uDLang has no plans to implement this feature, or to
-otherwise eliminate semicolons from the grammar.
+whereas uDLang has no plans to implement this feature.
+Explicit semicolons are considered a feature.
 
-DLang supports partial evaluation via the `$` operator, while it's not
-clear that Koka has any mechanism for partial evaluation.
+uDLang supports partial evaluation via the `$` operator.
