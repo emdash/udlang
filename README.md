@@ -1,8 +1,12 @@
 # uDLang #
 
-uDLang is a type-safe, pure-functional alternative to `awk`, which processes structured data on the command line over unix pipes.
+uDLang is a type-safe, pure-functional stream processor for structured binary data.
 
-The core uDLang language is a minimalist, pure language with JS-like syntax. 
+It's a bit like `awk`, but modern, type-safe, and pure.
+
+Syntax is inspired by JS, Flow, and Rust.
+
+## Example
 
 ### Hello World
 
@@ -46,13 +50,17 @@ Planned Features:
 - pattern matching and destructuring
 - partial evaluation.
 
-uDLang operates on binary data.
+uDLang model:
 - The input is a stream of binary records (in msgpack)
-- uDLang defines a native protocol for record segmentation.
+- The script is a kernel which is run to completion on each record
+- uDLang defines a native protocol for binary framing over pipes.
 - uDLang values are a superset of msgpack values.
-- udlang will ship with a suite of companion tools for working with this format.
 
-uDLang's syntax resembles that of [Koka](https://koka-lang.github.io/koka/doc/index.html)
+uDlang companion tools (planned):
+- `udlift` and `udlower` for converting between native udlang and various other formats.
+- `udmonad` driver for stateful udlang
+
+uDLang's bears superficial resemblence to [Koka](https://koka-lang.github.io/koka/doc/index.html)
 
 **uDLang is a work in progress, not all features documented here are
 implemented**.
@@ -91,7 +99,7 @@ The current version is `0.1-pre_mvp`.
 The goal for the MVP milestone is that uDLang should be minimally
 useful for casual coding.
 
-Subsequent releases will introduce optimizations and convenience features.
+Subsequent releases will focus on ergonomics and optimizations.
 
 uDLang is in its infancy. If the ideas behind uDLang exite you,
 contributions are welcome.
@@ -399,13 +407,11 @@ Both Koka and uDLang support "trailing lambdas" on function calls.
 ### Dot Notation
 
 Koka defines method call expressions like `x.f(...)`  to mean: `f(x,
-...)`, while udlang defines it to mean: `x['f](...)`.
-  
-uDLang aims to guarantee that this will optimize to a direct function
-call at runtime.
+...)`.
 
-In Koka, it's not clear you can refer to a method's function value
-directly (without calling it), while in uDLang you can.
+uDLang currently defines it to mean: `x["f"](...)`, but this may be about to change.
+  
+Either way, uDLang aims to guarantee method syntax will be optimized as much as possible.
 
 ### Record Processing
 
