@@ -1,134 +1,100 @@
 # Programming In uDLang
 
-In the simplest possible terms: uDLang programs represent stateless
-transformations on data. uDLang programs can be thougt of as a box
-which consumes data from an *upstream* channel, processes that data,
-and then the result *downstream*. It does this in *record-oriented*
-fashion. A complete record of input is read, though output can be
-produced incrementally if desired.
+A uDLang script is a filter for structured data.
 
-uDLang can be used for simple tasks, such as converting between two
-slightly different JSON-based formats. Or it can be used for complex
-processing, such as rendering output in HTML, post-script, svg,
-graphviz, etc.
+The script consumes binary records from the *input* channel,
+processes that data, and then emits the result to the *output*.
+ 
+If it helps, you can think of uDLang as a type-safe alternative to `jq` or `awk`.
 
-This programming model can be useful for batch processing of data,
-stream processing, event processing, etc. uDLang is just a piece of
-the puzzle, but it's a powerful one.
-
-You can think of it like a principled template engine. Or you can
-think of it like `jq` on steroids.
-
-TBD: example involving websockets or other streaming data.
-
-uDLang generally needs to work in conjunction with upstream and
-downstream processes -- though it need not, and both the input and
-output streams can be plain files. This is especially useful when
-testing uDLang scripts.
+The core uDLang interpreter consumes binary data in its native format. It is 
+intendeted to work in conjunction with upstream and downstream processes which convert
+data between this and a variety of formats.
 
 # Language Model
 
 A program in uDLang defines a *kernel* -- a piece of code executed on
-a single input *record* to produce arbitrary output. This kernel may
-be executed once on a single record. Or, it may be executed repeatedly
-to batch process an entire file. Or, it maybe executed continuously to
-process a stream of realtime-data. Anything goes, so long as the data
-can be segmented into records of a well-defined type.
+a single input value to produce an output value.
 
-A uDLang environment exposes *no* mutable global state to the running
-script whatsoever. All state is contained entirely within the input
-*record*.
+The interpreter will execute the same kernel on each record it receives.
+
+uDLang kernels are *stateless*. The entire script can be thought of as a pure
+function from an input value to an output value.
+
+A uDLang environment exposes *no* mutable state whatsoever.
 
 The lifecycle of a uDLang program is as follows:
 - compile: the input source is parsed, type-checked, and converted an
-  optimized representation. This can take place at ahead of time, or
+  optimized representation. This could take place at ahead of time, or
   immediately after startup.
 - load: a compiled program is loaded into the memory of an embedding
   environment.
-- init: one-time initialization may optionally take place, the result
-  of which is re-used between exec phases.
+- init: one-time initialization may occur, using load-time values.
 - read: a frame is consumed from an input file descriptor, and
   deserialized into memory as a record.
 - exec: the kernel is allowed to run to completion with the record
-  given as input. the kernel may emit one or more "side effects" as
-  output.
-- present: the side effects are collected, and presented on the output
-  file descriptor.
+  given as input.
+- present: an `out` statement, or the end of the script has been reached.
+  The final value, if any, is forwarded to the output.
 
 The sequence of read, exec, present repeats indefinitely, until the
-runtime environment terminates. a uDLang kernel has no direct control
-over its runtime environment, though in certain processing modes, the
-runtime may decide to terminate in response to the behavior of a
-uDLang kernel.
+input is exhausted, or the environment terminates.
+
+a uDLang kernel has no control over its runtime environment.
 
 The exact shape of the input accepted and the output produced are
-specified by `input` and `output` delcarations, respectively.
+specified by `input` and `output` delcarations in the script. uDLang
+compares its input shape against the shape expected by the script. The 
+default behavior is for uDLang to abort as soon as it encounters an invalid input record.
+Flags can be given to change this behavior to ignore, warn, or skip invalid records.
 
 ## Side Effects ##
  
-Side effects are an unavoidable consequence of programming in the real
-world. uDLang makes no attempt to hide them: instead, uDLang *models*
-side-effects as data.
+uDLang provides exactly *two* side effect mechanisms: the `out` statement, 
+and the `!` (debug) operator.
 
-The output of a program is the merely concatenation of its
-side-effects.
+### Debug `! <Expr>`
 
-uDLang provides exactly *one* means of communicating with the outside
-world: the `out` statement. 
+The `!` operator binds the inner-most expression on its right hand side, 
+printing a debug trace of the expression value to stderr
+and otherwise returning the original expression unchanged. 
 
-The syntax is: `out <Expr>;`
+Parenthesis can be used to explicitly group debug values.
+
+### Output `out <Expr>;`
 
 When execution encounters an `out` statement, the value of the
 expression will be captured and eventually serialized to the output
-stream.
-
-Side effects are ordered, and for the most part the sequence follows
-the order in which `out` statements appear in the code, with the
-notable exception of *subjunctives*, which will be discussed later.
-
-Before producing side effects, a script must declare its output type,
-for example: `output Str;` declares that the script produces plain
-text, while `output [{name: Str, x: Int, y: Int}]` declares the
-output type to be a list of named points (perhaps to be plotted).
+stream. The shape of `<Expr>` must match the shape declared by the 
+`output` declaration at the script's top level.
 
 A script must declare the output type exactly once in its lifetime,
 and it must be declared before the first side effect statement
-executes. In some cases, output is handled by library functions, in
-which case the library should provide a type for you to use in this
-declaration. By convention it is called `Output` in the library
-namespace. If a script wishes to merge output produced by multiple
-libraries, this can be accomplished with a union, like so:
+is reached.
 
-```
-import foo;
-import bar;
-output foo.Output | bar.Output;
-```
+`out` can be used inside functions or conditionals expressions. In all cases,
+`out` acts like an "early return" for the script as a whole. 
 
-Keep in mind that while uDLang itself is agnostic with respect to the
-choice of encoding, clearly and precisely specifying the shape of the
-output data has benefits:
-- it potentially allows for runtime optimizations.
-- it helps statically ensure the validity of the output produced.
-
-You should always declare your output type as precisely as you can,
-even if you know that a downstream process forces conversion to plain
-text.
+When `out` occurs within a block, it must be the last line of the block.
 
 ## Types ##
 
 The type system of uDLang is inspired primarily by FlowJS, with some
 inspiration from Python and Rust.
 
-- Int: 64-bit signed integers.
-- Float: 64-bit IEEE floating-point.
+- {I,U}{8,16,32,64}
+- F{32,64}
+- Nat: all unsigned integers
+- Int: all integers, signed or otherwise
+- Float: F32 | F64
+- Number: Int | Float
 - Str: Arbitrary utf-8 strings.
-- List: variable-length sequence of a single element type
-- Tuple: fixed-sized sequence of heterogenous type
-- Map: key-value pairs, with string keys.
-- Record: fixed set of fields with static types.
-- Unions: closed set of alternative types
-- Filters: arbitrary subtyping using compile-time reflection.
+- Array: arbitrary-length sequence of uniform type
+- Tuple: fixed-length sequence of arbitrary types.
+- Map: arbitrary key/value pairs of uniform type.
+- Record: fixed set of fields with explicit string keys and value types.
+- Unions: closed set of types
+- ValueType: lift aribitrary values to the type level.
 
 All data in uDLang is immutable, with no exceptions.
 
@@ -138,203 +104,33 @@ single type, while a Tuple is a fixed-length sequence of heterogenous
 types. Both types are indexed numerically, with zero-based indexing.
 
 Similarly, uDLang distinguishes between a *map*, which associates
-arbitrary string keys with values of a single type, and a *record*,
+arbitrary keys with values of a single type, and a *record*,
 which has a fixed set of *fields*, each of which has its own type.
 
-*Records* have some *class-like* features borrowed from OO. In
-addition to their fixed fields, records may define instance methods,
-static values, static functions, and types. 
+uDLang uses structural types.
 
-Records are structurally typed, rather than nominally
-typed. Structural typing can be thought of as a static form of "duck
-typing": Two records represent the same type if they define the same
-members, regardless of what name we call them by.
+*Unions*, aka "Sum Types" allow controlled polymorphism.
 
-*Unions* allow combining arbitary types. They allow lists and maps,
-for example, to hold polymorphic data in a type-safe way. They consist
-of two or more *variant* types. 
-
-For example, in a configuration file,
-a field `scale` might be be a string keyword, a scalar, or a vector
-quantity. This can be expressed as follows:
+Access to unions is type-safe: only operations defined on the *intersection* 
+of all the union variants are valid on a union type.
 
 ```
-type Style: {
-  // ... 
-  field scale: "default" | Float | Point;
-  // ...
-};
+func add<T: Int>(x: T, y: T) -> T     {x + y}         // okay, types are the same.
+func add(x: Int, y: Int)     -> Int   {x + y}         // okay, because of implicit widening conversions.
+func add(x: Int, y: Float)   -> Float {x + y}         // nope, Int and floats aren't compatible.
+func add(x: Int, y: Float)   -> Float {x as F32 + y}  // okay, explicit cast + implicit widening conversions.
 ```
 
-Access to unions is type-safe: only operations defined on *all* the
-variants are valid, unless a *refinement* is used to clarify which
-variant is present:
-
+A *match expression* can be used to extract data from the variants of interest.
 ```
 ...
 match self.scale {
-   case "default" -> (1.0, 1.0),
-   case s:Float   -> (s, s),
-   case p:Point   -> p,
+   case "default": (1.0, 1.0);
+   case s:Float:   (s, s);
+   case p:Point:   p;
 }
 ...
 ```
-Every union type `T` contains an associated type, `T.Tag` which holds merely the type of 
-each alternative.
-
-### Filter Types ###
-
-This is an experimental concept, which has yet to be fully designed,
-but the general idea is to provide a catch-all mechanism for
-experimenting with extensions to the type system.
-
-Different ways this could manifest. One idea might be a set-theoretic
-approach, which might allow you to do type subsetting with boolean
-predicates.
-
-`type EvenInt: {x: Int | x % 2 == 0}`
-
-We might, for example, be able to expose the guts of the type-checker
-in a way that simplifies deriving new types from existing types, or that
-allows enforcing complex invariants at compile-time.
-
-In some ways this feature is inspired by C++ *concepts*, which are
-basically form of compile-time programming.
-
-Stay tuned.
-
-## Templates ##
-
-The template mechanism is a simple, elegant, language level solution
-to the problem of factoring out *wrapping* or *decorating* patterns.
-
-You want to avoid repeating yourself, but most languages make it hard
-factor out code wich decorates objects with an aribtrary *prefix* and
-*suffix* in a way that feels natural.
-
-An imperative approach to tree traversal will often require an
-intermediate *builder* object to track state, while a functional
-approach requires constructing an intermediate data structure on the
-call stack before serialization can proceed, polluting function
-signatures in the process.
-
-Somewhere in the middle are *macros*, a heavy-weight solution to what
-should be a simple problem.
-
-There are two parts to the template mechanism: Template definitions and
-template calls.
-
-Declaration syntax: `template <name:Id> <args:Arglist> using <delegate:Id> <body:Block>`
-
-```
-template wrap(x: Str) using content {
-  out x;
-  content();
-  out x;
-}
-```
-
-You call it like this:
-
-```
-wrap("|") {
-   out "bar";
-}
-```
-
-This example outputs: `|bar|`
-
-This allows function calls to nest in a way that more closely
-resembles the shape of the data being produced.
-
-For now, the template mechanism is restricted to *procedures*
-(functions with return-type void), but this may be relaxed in the
-future if it doesn't lead to ambiguities in the grammar.
-
-### Subjunctives ###
-
-Subjunctives are a mechanism to ease the composition of templates by
-simplifying the handling of a common edge-case: output that depends on
-whether a tree node is a leaf or a branch.
-
-More precisely, the subjunctive allows branching based on whether or
-not a sub-expression produces output, which may or may not be
-statically known, with subsequent *reordering* the delegate's output
-to the correct position.
-
-It's like a crystal ball that allows your code to "peer into the
-future", so that it can make the right decision in the present.
-
-There are four variants of the subjunctive:
-
-`suppose (<expr>) <veridical:Block>`
-`suppose (<expr>) <veridical:Block> otherwise <counterfactual:Block>`
-`suppose <id> = (<expr>) <veridical:Block>`
-`suppose <id> = (<expr>) <veridical:Block> otherwise <counterfactual:Block>`
-
-The first two forms are shorthand for when the value of expr is not
-needed in either branch body, while the latter forms bind the value of
-expr inside either arm.
-
-In all cases, the value of the subjunctive expression as a whole is
-the value yielded by the whichever block is executed.
-
-Within the *veridical* arm only, side-effects captured from `<expr>`
-can be placed into the output stream with the `...` statement.
-
-The `...` statement can appear arbitrarily many times, or not at all,
-and in any statement context within the veridical arm. If it is
-executed multiple times, then the side effects will be duplicated in
-the output.
-
-For example, the following snippet outputs "She loves you! Yeah! Yeah!
-Yeah!".
-
-```
-output: Str;
-
-proc she_may_love_you() {
-  out "Yeah!";
-}
-
-suppose (she_may_love_you()) {
-  out "She loves you!";
-  repeat 3 {
-    out " ";
-	...;
-  }
-};
-```
-
-This works even when the subunctive status can't be determined statically:
-
-```
-output Str;
-input Bool;
-
-proc she_may_love_you(love_is_real: bool) {
-  if (love_is_real) {
-    out "Yeah!";
-  }
-}
-
-suppose (she_may_love_you(in)) {
-  out "She loves you!";
-  repeat 3 {
-    out " ";
-	...;
-  }
-} otherwise {
-  out "Yesterday ...\n all my troubles seemed so faaaaar awayyyyy!";
-};
-```
-
-With this example `echo true | udlang --input json love.ud` outputs "She loves you!
-Yeah! Yeah! Yeah!", while `echo false | udlang --input json love.ud` outputs the
-opening lines to "Yesterday".
-
-While it may seem like magic, it's not: it's possible precisely
-because uDLang embraces pure, functional semantics.
 
 ## Syntax Reference (with Examples) ##
 
