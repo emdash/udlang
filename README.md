@@ -305,7 +305,8 @@ lib "Simple Html Formatting Library";
 // Declare the output type for this library.
 export type Output: Str;
 
-type Element: {
+// Define an HTML Element ADT
+export type Element: {
    tag: String,
    attrs: {[String]: String},
    children: [Element | String],
@@ -318,29 +319,30 @@ func escape(text: Str) -> Str = { /* ... */ };
 // brevity.
 func quote(text: Str) -> Str = { /* ... */ };
                
-// Helper function for constructing elements..
+// Helper function for constructing elements.
 export func element(
   tag: Str, 
   attrs: Map<Str>,
   allowChildren: Bool,
+  // uDLang supports JS-like "rest" parameters.
   ...children: Element | String,
-) -> Element {
-  if (allowChildren) {
-    {tag, attrs, children, true}
+) -> Element ! Str {
+  let requiresClose = if (allowChildren) {
+    true
+  } elif (content.length > 0) {
+    throw tag + " tags should not contain children!"
   } else {
-    if (content.length > 0) {
-       throw tag + " tags should not contain children!";
-    } else {
-       {tag, attrs, [], false}
-    }
+    false
+  };
+
+  {tag, attrs, children, requiresClose}
 }
 
-
-export func format(element: Element) -> String {
+// Format the HTML Element tree
+export func format(element: Element) -> String ! String {
   let {tag, attrs, children, requiresClose} = element;  
   let attributes = [attrs | escape($) + "=" + quote($)].join(" ")  
   let open_tag   = ["<", tag, " ", attrs, ">"].join("");
-
   if (requiresClose) {
     let close_tag = ["</", tag, ">"].join("");
     let content = [children | match ($) {
@@ -350,28 +352,26 @@ export func format(element: Element) -> String {
     open_tag + content + close_tag
   } else match (content) {
     case None: open_tag;
-    case _:    throw tag + " elements should not contain content!";
+    case _:    throw tag + " tags should not contain content!";
   }
 };
 
 // With the general definition of an HTML element in hand, we can specialize it
 // for standard tags using `$`, the "placeholder" for partial application.
 //
-// $0, $1, $2, forward positional arguments within the same partial expresion.
-// $ is the "next" positional argument.
-// $... forwards "remaining" arguments, and can only appear once in an expression.
+// each $ is a distinct argument.
+// $... captures and spreads "rest" arguments. 
+// it may only appear when the final argument is a "rest" parameter.
+export html = element("html", $, true, $...));
 export head = element("head", $, true, $...);
 export body = element("body", $, true, $...);
 export div  = element("div",  $, true, $...);
-// ...
+// ... etc
 
 // These elements cannot contain content.
 export br   = element("br", $, false);
 export hr   = element("hr", $, false);
-// ... 
-
-// top-level html element is a special case
-export html = format(element("html", $, $...));
+// ... etc
 
 ```
 
