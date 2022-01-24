@@ -129,48 +129,51 @@ out match in {
 
 ```
 
-### Processing Structured Data
+### Normalizing Structured Data
 
-This example converts an array of point-like records to a record of
-arrays, i.e this `[{x: 0, y: 1}, {x: -1, y: 7}]`, becomes `{x: [0.0,
--1.1], y: [1.0, 7.0], z:[0.0, 0.0]}`.
+This example converts an array of records to a record of arrays (normalizing the output as float):
+ - `[{x: 0, y: 1, z: 2}, {x: -1, y: 7, z: 3}]`, becomes
+ -  `{x: [0.0, -1.1], y: [1.0, 7.0], z:[2.0, 3.0]}`.
 
 ```
 version 0.1-pre_mvp;
-script "Convert a list of points to a record of parallel arrays";
+script "Normalize list points to parallel coordinate arrays";
 
-// A point is a map with numeric keys
+// We can define type aliases, like so...
 type Point: {
   x: I32 | F32;
   y: I32 | F32;
   z: I32 | F32;
 };
 
-// Input is a list of Points.
+// The input is an array of Point.
 input [Point];
 
-// Output is a record with parallel arrays.
+// The output is a record with parallel arrays.
 output {
   x: [F32];
   y: [F32];
   z: [F32];
 };
 
-// Construct output record and write it to the output.
+// Define a helper used below.
+func helper(item) {item.z}
+
+// Construct and emit the output.
 out {
-  // $.x is a partial function, short-hand for: `(p) => {p.x}`
-  x: in.map($.x as F32), 
-  y: in.map($.y as F32),
-  z: in.map($.z as F32)
+  // udlang relies on comprehensions and recursion.
+  // The following array comprehensions are equivalent.
+  x: [in | (item) => item.x as F32], // Explicit lambda
+  y: [in | $.y as F32],              // Partial expression
+  z: [in | helper],                  // Bound function value.
 };
 
 ```
 
 ### HTML Templating ###
 
-Let's imagine that we are writing a todo-list web-application. As part
-of this, we want to convert a JSON payload received from a web service
-into legible HTML.
+Let's imagine that we are writing a todo-list web-application. 
+As part of this, we want to convert a JSON into legible HTML.
 
 ```
 {
@@ -196,60 +199,61 @@ script "Todolist Example";
 
 // Import some helper functions from our html companion library (see below),
 // including the library itself.
-import html.{_, html, head, title, body, h1, h2, ul, li, div, quote};
+import html.{_, html, head, title, body, h1, h2, ul, li, div};
 
 // Define a type alias for a single todo-list item.
 // Type names must start with an upper-case letter.
 type TodoItem: {
-  id: U32,
-  name: Str,
-  // uDLang supports "string enums" similar to FLowJS.
-  status: "complete" |  "incomplete" | "blocked";
-  blocker: Int?;
+  id:       U32,
+  name:     Str,
+  // uDLang supports "string enums", like FlowJS.
+  status:   "complete" |  "incomplete" | "blocked";
+  // blocker is a field which, if present, is a U32.
+  blocker?: U32;
+  // If we wanted blocker to be nullable instead, we'd use
+  // blocker: U32?;
+  //
+  // The distinction is that in the former, the field can be absent,
+  // while in the latter, the slot must be present but the value can be `null`.
+  //
+  // Within the script, they both appear as Option<U32>
 };
 
-let alert = div({class: "alert"}, content = "Blocked on: " + $);
+// type of `blocked` here is `(String) -> html.Element`. Note the wildcard.
+let blocked = span({class: "alert"}, "Blocked on: " + items[$].name);
 
-// We can define methods on record types with `impl`.
-impl TodoItem {
-   func format() -> Str {
-     // uDLang supports string interpolation.
-     li({class: "todo-item ${self.status}"}) {
-       quote(self.name) + "" + match (self.blocker) {
-         case None:          "";
-         case Some(blocker): alert(items[blocker].name)
-        };
-      }
-    }
+// A free function which formats a TodoItem as an html.Element.
+func format(self: TodoItem) -> html.Element {
+  let attrs = {class: ["todo-item", self.status].join(" ")};
+  match (self.blocker) {
+     case None:        li(attrs, self.name);
+     case Some(index): li(attrs, self.name, blocked(index));
   }
-};
+}
 
 // Declare the shape of the input.
-input {field name: Str; field items: [TodoItem]};
+input {
+  name: Str, 
+  items: [TodoItem]
+};
 
-// Declare the output type, which is defined by the HTML helper library.
-output html.Output;
+// Declare that the output is plain text.
+output String;
 
-// Format the entire document. As with many scripting languages, there is no
-// specific program entry point, such as a function named `main`.
+// Format the document and output it.
 //
-// All allusions to HTML syntax here (`head`, `body`, etc) are uDLang
-// functions living in the helper library.
-//
-// uDLang supports a "template" syntax for calling functions with trailing 
-// block, a feature borrowed from Ruby.
-out html() {
-   head() {
-     title() {in.name}
-   } + body() {
-     h1() {text(in.name)} +
-     div({class: "todo-list"}) {
-       ul() {
-         in.items.map($.format()).join("")
-       }
-     }
-   }
-}
+// All allusions to HTML syntax here (`head`, `body`, etc) are plain
+// functions living in a helper library.
+out html.format(html({},
+   head({}, title({}, in.name)),
+   body({},
+     h1({}, in.name),
+     div({class: "todo-list"},
+       // uDLang supports JS-like spread syntax in function calls.
+       ul({}, ...[in.items | format])
+     )
+   )
+));
 ```
 
 Let's run this example:
@@ -277,13 +281,17 @@ Now let's try it again on some invalid input:
 }
 ```
 
-The input record is invalid, because the id field is signed.
-
  **TBD**
  
-The udlang interpreter rejects the input stream, because it has the wrong shape.
+In this example, the input record is invalid, because the id field is signed.  
+uDlang refuses to process the input stream, because it has the wrong shape.
+uDLang is type-safe by default. 
 
-`udlift` attempts to deduce the shape of the input, but you can also specify an explicit schema.
+`udlift` attempts to deduce the shape of the input automatically. Use:
+- `--schema <schema_file>` to specify an explicit schema
+- `--reject` to cause `udlift` to abort when it receives invalid input
+- `--ignore` to cause `udlift` to silently drop invalid input
+- `--warn` to cause `udlift` to drop invalid input, but warn noisily about it on stderr.
 
 #### The HTML Library ####
 
@@ -295,52 +303,76 @@ version 0.1-pre_mvp;
 lib "Simple Html Formatting Library";
 
 // Declare the output type for this library.
-type Output: Str;
+export type Output: Str;
 
-// Converts a string to an html-escaped format, implementation omitted for 
+type Element: {
+   tag: String,
+   attrs: {[String]: String},
+   children: [Element | String],
+   requiresClose: Bool
+};
+
+// Converts a string to an HTML-escaped string.
+func escape(text: Str) -> Str = { /* ... */ };
+// Converts a string to an html-quoted string, implementation omitted for 
 // brevity.
 func quote(text: Str) -> Str = { /* ... */ };
-
-// This is a generic function which formats a single element.
-//
-// Child elements are provided by the `content` function argument.
-func element(
+               
+// Helper function for constructing elements..
+export func element(
   tag: Str, 
-  attrs: Map<Str> = {},
-  allowChildren: Bool = true
-  content: () -> Str = () => "",
-) -> Output {
-  // Begin by writing the opening tag.
-  let attributes = attrs
-     .map((k, v) => quote(k) + "=" + quote(v)})
-     .join(", ");
-  
-  let opening = ["<", tag, " ", attrs, ">"].join("");
-  let closing = ["</", tag, ">"].join("");
-  
+  attrs: Map<Str>,
+  allowChildren: Bool,
+  ...children: Element | String,
+) -> Element {
   if (allowChildren) {
-    [opening, content(), close].join("")
-  } else match (content()) {
-    case "": opening,
-    case x:  throw "Content must be empty, 
+    {tag, attrs, children, true}
+  } else {
+    if (content.length > 0) {
+       throw tag + " tags should not contain children!";
+    } else {
+       {tag, attrs, [], false}
+    }
+}
+
+
+export func format(element: Element) -> String {
+  let {tag, attrs, children, requiresClose} = element;  
+  let attributes = [attrs | escape($) + "=" + quote($)].join(" ")  
+  let open_tag   = ["<", tag, " ", attrs, ">"].join("");
+
+  if (requiresClose) {
+    let close_tag = ["</", tag, ">"].join("");
+    let content = [children | match ($) {
+       case Element as e: format(e);
+       case String  as s: escape(s);
+    }];
+    open_tag + content + close_tag
+  } else match (content) {
+    case None: open_tag;
+    case _:    throw tag + " elements should not contain content!";
   }
 };
 
-// uDLang requires libraries to explicitly export definitions.
-export Output;
-export element;
-
-// With this general definition of an HTML element in hand, we can specialize it
-// for standard tags. `$` is the "placeholder" for partial application.
-export html = element("html", $) $;
-export head = element("head", $) $;
-export body = element("body", $) $;
-export div  = element("div",  $) $;
+// With the general definition of an HTML element in hand, we can specialize it
+// for standard tags using `$`, the "placeholder" for partial application.
+//
+// $0, $1, $2, forward positional arguments within the same partial expresion.
+// $ is the "next" positional argument.
+// $... forwards "remaining" arguments, and can only appear once in an expression.
+export head = element("head", $, true, $...);
+export body = element("body", $, true, $...);
+export div  = element("div",  $, true, $...);
+// ...
 
 // These elements cannot contain content.
 export br   = element("br", $, false);
 export hr   = element("hr", $, false);
-// ... remaining elements elided for brevity.
+// ... 
+
+// top-level html element is a special case
+export html = format(element("html", $, $...));
+
 ```
 
 ## uDLang and Koka
