@@ -1,133 +1,383 @@
 #! python3
 
-import pprint
+import json
 import sys
+import traceback
 
 from collections import OrderedDict
-from dataclasses import dataclass
-from typing import Callable, List
+from dataclasses import dataclass, asdict
+from typing import Any, Callable, List, Tuple
 
 ## Toy implementation of a "G-machine", which is the core of most functional
 ## languages.
 ##
-## Inspired from: https://danilafe.com/blog/05_compiler_execution/
+## References:
+## - https://www.microsoft.com/en-us/research/wp-content/uploads/1992/01/student.pdf
+## - https://danilafe.com/blog/05_compiler_execution/
+## - Special mention for:
+##   https://amelia.how/posts/the-gmachine-in-detail.html
+##   An especially clear and concise presentation of these ideas.
+
+# Container for in-memory instructions
+@dataclass(frozen=True)
+class Ins:
+    name: str
+    eval: callable
+    meta: Tuple[Any]
+
+    def __str__(self):
+        if len(self.meta):
+            return "%s(%s)" % (self.name, ", ".join(repr(r) for r in self.meta))
+        else:
+            return self.name
+
+# Name        immediates         debug name                VM operation       debug meta
+push_value  = lambda v:      Ins("push_value",  lambda vm: vm.push_value(v),  (v,     ))
+push_global = lambda g:      Ins("push_global", lambda vm: vm.push_global(g), (g,     ))
+push_arg    = lambda n:      Ins("push",        lambda vm: vm.push_arg(n),    (n,     ))
+push_local  = lambda n:      Ins("local",       lambda vm: vm.push_local(n),  (n,     ))
+mk_app      =                Ins("mk_app",      lambda vm: vm.mk_app(),       (      ))
+unwind      =                Ins("unwind",      lambda vm: vm.unwind(),       (      ))
+update      = lambda n:      Ins("update",      lambda vm: vm.update(n),      (n,    ))
+pack        = lambda tag, n: Ins("pack",        lambda vm: vm.pack(tag, n),   (n, tag))
+split       =                Ins("split",       lambda vm: vm.split(),        (      ))
+cond        = lambda cases:  Ins("cond",        lambda vm: vm.cond(cases),    (      ))
+slide       = lambda n:      Ins("slide",       lambda vm: vm.slide(n),       (n,    ))
+eval        =                Ins("eval",        lambda vm: vm.eval(),         (      ))
+binop       = lambda n, f:   Ins("binop",       lambda vm: vm.binop(f),       (n,    ))
+pop         = lambda n:      Ins("pop",         lambda vm: vm.pop(n),         (      ))
 
 
-# The G-Machine operates on graphs composed of the following nodes.
-@dataclass
+# arithmetic builtins
+add = binop("+", lambda x, y: x + y)
+sub = binop("-", lambda x, y: x - y)
+mul = binop("*", lambda x, y: x * y)
+div = binop("/", lambda x, y: x / y)
+eq  = binop("=", lambda x, y: x == y)
+
+
+# ADT for GMachine Graph
+@dataclass(frozen=True)
 class Node:
     pass
-
-@dataclass
-class NInt(Node):
-    value: int
-
-@dataclass
+@dataclass(frozen=True)
+class NVal(Node):
+    value: Any
+    def dump(self):
+        return {"type": "value", "value": self.value}
+@dataclass(frozen=True)
 class NApp(Node):
-    f: Node
-    x: Node
-
-@dataclass
+    left: int
+    right: int
+    def dump(self):
+        return {"type": "app", "left": self.left, "right": self.right}
+@dataclass(frozen=True)
 class NGlobal(Node):
     name: str
-    eval: Callable
-
-@dataclass
+    arity: int
+    code: Tuple[Ins]
+    def dump(self):
+        return {
+            "type": "global",
+            "name": self.name,
+            "code": [str(i) for i in self.code]
+        }
+@dataclass(frozen=True)
 class NInd(Node):
-    follow: Node
-
-@dataclass
+    next: int
+    def dump(self):
+        return {"type": "ind", "next": self.next}
+@dataclass(frozen=True)
 class NData(Node):
-    constructor: str
-    args: List[Node]
+    tag: str
+    data: Tuple[int]
+    def dump(self):
+        return {"type": "data", "tag": self.tag, "data": self.data}
 
 
-@dataclass
-class Instruction:
-    """In-Memory instruction format."""
-    def eval(self, vm): raise NotImplemented
+class FakeHeap:
 
+    """Simulates the behavior of a memory managment heap.
 
-## Class names below below follow the mnemonics in the article.
+    We use id() to generate the initial "address" for an node.  Items
+    can be updated "in place", so this is intentionally not an
+    invariant.
 
+    We can investigate easy how many "updates" the evaluator performs,
+    and how many nodes get "updated",
+    """
 
-@dataclass
-class I(Instruction):
-    n: int
-    def eval(self, vm): vm.push_int(self.n)
+    def __init__(self):
+        self.forward = {}
+        self.reverse = {}
+        self.updates = 0
 
-@dataclass
-class G(Instruction):
-    f: str
-    def eval(self, vm): vm.push_global(self.f)
+    def alloc(self, item):
+        if item not in self.reverse:
+            addr = id(item)
+            self.forward[addr] = item
+            self.reverse[item] = addr
+        return self.reverse[item]
 
-@dataclass
-class A(Instruction):
-    def eval(self, vm): vm.mk_app()
+    def free(self, item):
+        if item not in reverse:
+            raise ValueError("Double Free")
 
+        addr = self.reverse.pop(item)
+        forward.pop(addr)
 
-builtins = {
-    "double": None
-}
+    def find(self, item):
+        return self.reverse[item]
 
+    def insert(self, item):
+        if item not in self.reverse:
+            return self.alloc(item)
+        else:
+            return self.find(item)
+
+    def __contains__(self, item):
+        return item in self.reverse
+
+    def __setitem__(self, addr, value):
+        if addr != id(value):
+            self.updates += 1
+        self.reverse.pop(value)
+        self.reverse[value] = addr
+        self.forward[addr] = value
+
+    def __getitem__(self, addr):
+        return self.forward[addr]
+
+    def __iter__(self):
+        return iter(self.forward.items())
+
+    def updated(self):
+        return {
+            v for v in self.forward.iteritems()
+            if k != id(v)
+        }
+
+    def dump(self):
+        return {k: v.dump() for k, v in self}
+
+class FlowControl(BaseException):
+    pass
+
+class Halt(FlowControl):
+    pass
 
 class GMachine:
-    """Implement the G-Machine"""
+    """Simulates the abstract machine"""
 
-    def __init__(self, program):
-        # The instruction queue.
-        self.queue = list(program)
+    def __init__(self, globals, main):
+        # The instruction stream
+        self.queue = list(main)
 
-        # The stack is a stack values. In the literature, this is a stack of
-        # addresses. In python, all values are references, so these just
-        # contain values. We implicitly rely on python's internal heap and
-        # reference semantics.
+        # Nothing special here, other than it contains heap addresses.
         self.stack = []
-        self.map = dict(builtins)
 
-        # Produce some nice debug output
-        self.pp = pprint.PrettyPrinter(indent=2)
+        # The "heap" is where our values live.
+        #
+        # Python has reference semantics, so at first I thought we didn't need
+        # this. But it turns out that we need at least one level of indirection
+        # to allow "updating" nodes.
+        self.heap = FakeHeap()
 
-    def save(self):
+        # This is a stack of stack, used for function returns
+        self.dump = []
+
+        # Place the globals into our heap
+        self.map = {
+            g.name: self.heap.insert(g)
+            for g in globals
+        }
+
+    ## VM Machinery
+
+    def debug_state(self, remark):
         """Return a serializable copy of state for debug output"""
-        return OrderedDict([
-            ("queue", list(self.queue)),
-            ("stack", list(self.stack)),
-            ("map",   list(self.map))
-        ])
+        json.dump(OrderedDict((
+            ("remark", remark),
+            ("queue", list([str(i) for i in self.queue])),
+            ("stack", self.stack),
+            ("heap",  self.heap.dump()),
+            ("map",   self.map),
+            ("dump",  [(map(str, s), map(str, q)) for (s, q) in self.dump])
+        )), sys.stdout, indent=2)
+        print()
 
     def run(self):
         """Run the program to completion"""
-        while self.queue:
-            self.step()
+        try:
+            self.debug_state("init")
+            while self.queue:
+                self.step()
+        except Halt as e:
+            self.debug_state("halt")
+            return e.msg
+        except BaseException as e:
+            self.debug_state("exception")
+            traceback.print_exc(e, file=sys.stderr)
 
     def step(self):
         """Run a single instruction"""
-        before = self.save()
-        try:
-            self.queue.pop(0).eval(self)
-        finally:
-            self.pp.pprint(OrderedDict([
-                ("before", before),
-                ("after", self.save())
-            ]))
+        i = self.queue.pop(0)
+        i.eval(self)
+        self.debug_state("step(%s)" % i)
 
-    def push_int(self, n):
-        self.stack.append(NInt(n))
+    def call(self, instructions, args):
+        self.dump.append((self.stack, self.queue))
+        self.stack = args
+        self.queue = list(instructions)
+        self.debug_state("call")
 
-    def push_global(self, f):
-        self.stack.append(self.map[f])
+    def ret(self):
+        assert(self.dump)
+        (self.stack, self.queue) = self.dump.pop()
+        self.debug_state("ret")
 
-    # the literature calls this `Push` even though it feels more like
-    # `over` or `dup` to me, coming from forth-like languages.
-    def push(self, n):
-        self.stack.append(self.stack[n])
+    # Plain stack operations
+
+    def pop(self, n):
+        ret = self.stack[:n]
+        # keep the existing stack, otherwise I think it breaks the
+        # dump?
+        for i in range(n):
+            self.stack.pop(0)
+        return ret
+
+    def push(self, *addrs):
+        for a in reversed(addrs):
+            self.stack.insert(0, a)
+
+    # Stack operations with heap indirection
+
+    def peek(self, n):
+        return self.heap[self.stack[n]]
+
+    def poke(self, n, value):
+        self.stack[n] = self.heap.insert(value)
+
+    def top(self):
+        return self.peek(0)
+
+    # Instruction Implementations
+
+    def push_value(self, v):
+        self.push(self.heap.insert(NVal(v)))
+
+    def push_global(self, g):
+        self.push(self.map[g])
+
+    def push_local(self, n):
+        self.push(self.stack[n])
+
+    def push_arg(self, n):
+        val = self.peek(n)
+        assert(isinstance(val, NApp))
+        self.push(val.right)
 
     def mk_app(self):
-        a0 = self.stack.pop()
-        a1 = self.stack.pop()
-        self.stack.append(NApp(a0, a1))
+        [a0, a1] = self.pop(2)
+        self.push(self.heap.insert(NApp(a0, a1)))
+
+    def unwind(self):
+        top = self.top()
+        if   isinstance(top, NVal):    self.unwind_val(top)
+        elif isinstance(top, NApp):    self.unwind_app(top)
+        elif isinstance(top, NGlobal): self.unwind_global(top)
+        elif isinstance(top, NInd):    self.unwind_ind(top)
+
+    def unwind_app(self, top):
+        self.push(top.left)
+        self.debug_state("unwind_app")
+        self.unwind()
+
+    def unwind_global(self, top):
+        assert(top.arity >= 0)
+        assert(len(self.stack) > top.arity)
+        for i in range(1, n + 1):
+            self.poke(i, self.peek(i).right)
+        top.code
+        # XXX: this seems dubious... what happens to remanining instructions?
+        self.queue = top.code
+        self.debug_state("unwind_global")
+        # XXX: do we stop unwinding here?
+
+    def unwind_val(self, top):
+        if self.dump:
+            self.ret()
+            self.push(self.heap.insert(top))
+            self.debug_state("unwind_val")
+            # XXX: do we terminate unwind recursion here?
+        else:
+            # unwind val with a non-empty dump means we have finished
+            raise Halt(top)
+
+    # replace an indirection with what it points to.
+    def unwind_ind(self, top):
+        assert(isinstance(self.top(), NInd))
+        # can't use poke here, top.next is an address
+        self.stack[0] = self.top().next
+        self.debug_state("unwind_ind")
+        # I believe we continue unwinding?
+        self.unwind()
+
+    # replace stack entry at offset n with an indirection
+    def update(self, n):
+        # don't use peek here, n.next is an address
+        self.poke(n, NInd(self.stack[n]))
+
+    # move top n items to a data node, with the given tag
+    def pack(self, tag, n):
+        self.push(NData(tag, self.stack.pop(n)))
+
+    # unpack top n items to the stack
+    def split(self):
+        top = self.heap[self.pop()]
+        assert(isinstance(NData, top))
+        self.push(*top.data)
+
+    # hand control to the branch given by the type tag
+    def jump(self, branches):
+        top = self.heap[self.pop()]
+        assert(isinstance(top, NData))
+        self.call(branches[top.tag], [top])
+
+    def slide(self, n):
+        top = self.pop(1)
+        self.pop(n)
+        self.push(top)
+
+    # we could generalize this to "native" or "intrinsic".
+    # this is where we hook into "native" code implemented in the host
+    # language.
+    def binop(self, op):
+        a0 = self.stack.pop(0)
+        a1 = self.stack.pop(0)
+        self.stack.insert(0, NInt(op(a0.value, a1.value)))
+
+    def eval(self):
+        top = self.stack.pop(0)
+        self.call([Unwind], [top])
 
 
 # Simple test
-GMachine([I(326), G("double"), A()]).run()
+GMachine([
+    NGlobal("plus", 2, (
+        push_arg(1),
+        push_arg(1),
+        add,
+        update(2),
+        pop(2),
+    ))
+], [
+    # defn main
+    push_value(6),
+    push_value(320),
+    push_global("plus"),
+    mk_app,
+    mk_app,
+    update(0),
+    pop(0),
+]).run()
