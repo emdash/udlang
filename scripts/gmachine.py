@@ -20,7 +20,6 @@ from typing import Any, Callable, List, Tuple
 @dataclass(frozen=True)
 class Ins:
     """Pretty-printable instruction values."""
-    
     name: str
     eval: callable
     meta: Tuple[Any]
@@ -193,22 +192,25 @@ class GMachine:
             for g in globals
         }
 
+        # Some extra state for debug output
+        self.exc = None
         self.instruction = None
-        self.states = []
 
     ## Machinery for the VM
 
-    def debug_state(self, remark):
+    def debug_state(self, remark, **extra):
         """Return a json-serializable copy of state for debug output"""
-        self.states.append(OrderedDict((
+        json.dump(OrderedDict((
             ("remark", remark),
+            ("exception", traceback.format_exc() if self.exc else None),
             ("instruction",  str(self.instruction)),
             ("queue", list([str(i) for i in self.queue])),
             ("stack", self.stack),
             ("heap",  self.heap.dump()),
             ("map",   self.map),
             ("dump",  [(map(str, s), map(str, q)) for (s, q) in self.dump])
-        )))
+        )), sys.stdout)
+        print()
 
     def run(self):
         """Run the program to completion"""
@@ -220,13 +222,8 @@ class GMachine:
             self.debug_state("halt")
             return e.args[0]
         except BaseException as e:
+            self.exc = e
             self.debug_state("exception")
-            traceback.print_exc(e, file=sys.stderr)
-        finally:
-            output = open("debuglog.json", "w")
-            output.write("const trace = ")
-            json.dump(self.states, output)
-            output.write(";")
 
     def step(self):
         """Run a single instruction"""
