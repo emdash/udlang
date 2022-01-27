@@ -51,6 +51,7 @@ const table = ()  => el("table");
 const tr    = ()  => el("tr");
 const td    = ()  => el("td");
 const img   = ()  => el("img");
+const pre   = ()  => el("pre");
 
 const datum = (k, v) => tr()
       .append(td().attr("class", "datum-label").append(k),
@@ -75,13 +76,18 @@ const render_queue = q => span()
 const render_stack = (s, h) => span()
       .append(...s.map(addr => render_value(h[addr])))
 
+const render_exception = exc => pre()
+      .attr("class", "exception")
+      .append(exc || "none");
+
 const render_state = state => table()
       .attr("class", "state")
       .append(datum("remark",      state.remark),
 	      datum("instruction", render_instruction(state.instruction)),
               datum("queue",       render_queue(state.queue)),
 	      datum("stack",       render_stack(state.stack, state.heap.data)),
-	      datum("heap",        render_heap(state.heap)));
+	      datum("heap",        render_heap(state.heap)),
+              datum("exception",   render_exception(state.exception)));
 
 const render = () => div()
       .attr("id", "content")
