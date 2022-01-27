@@ -52,14 +52,14 @@ print("const dump = [");
 for (i, state) in enumerate(dump):
     heap = state["heap"]
     dotfile = "%s/heap%d.dot" % (DIR, i)
-    imgfile = "%s/heap%d.png" % (DIR, i)
+    imgfile = "%s/heap%d.svg" % (DIR, i)
 
     # generate heap image
     make_heap_graph(heap, open(dotfile, "w"))
-    os.system("dot -Tpng %s > %s" % (dotfile, imgfile))
+    os.system("dot -Tsvg %s > %s" % (dotfile, imgfile))
 
     # insert the image path into the debug trace
-    state["heap"] = {"img": "%s/heap%d.png" % (DIR, i), "data": heap}
+    state["heap"] = {"img": imgfile, "data": heap}
     json.dump(state, sys.stdout)
     print(",")
 print("];")
