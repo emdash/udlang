@@ -13,6 +13,10 @@ function normalize(content) {
     }
 }
 
+Object.prototype.map = function(f) {
+    return Object.entries(this).map(([key, value]) => f(key, value));
+};
+
 Element.prototype.append = function (...content) {
     for (let c of content) {
 	this.appendChild(normalize(c));
@@ -51,12 +55,23 @@ const datum = (k, v) => tr()
       .append(td().attr("class", "label").append(k),
 	      td().attr("class", "value").append(v));
 
+const render_value = v => { switch (v.type) {
+    case "value":  return span().attr("class", "value").append(`val: ${v.value}`);
+    case "app":    return span().attr("class", "app").append("app");
+    case "global": return span().attr("class", "global").append(`global: ${v.name}`);
+    case "ind":    return span().attr("class", "ind").append(`ind`);
+}};
+
+const render_heap = heap => table()
+      .attr("class", "heap")
+      .append(...heap.map((key, value) => datum(key, render_value(value))))
+
 const render_state = state => table()
       .attr("class", "state")
       .append(datum("remark",      state.remark),
 	      datum("instruction", state.instruction),
 	      datum("stack",       state.stack),
-	      datum("heap",        state.heap));
+	      datum("heap",        render_heap(state.heap)));
 
 const render = () => div()
       .attr("id", "content")
