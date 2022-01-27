@@ -17,6 +17,11 @@ from typing import Any, Callable, List, Tuple
 ##   The clearest, most concise presentation of these ideas I could find.
 
 
+def debug(value, *rest):
+    print(value, *rest, file=sys.stderr)
+    return value
+
+
 @dataclass(frozen=True)
 class Ins:
     """Pretty-printable instruction values."""
@@ -140,6 +145,7 @@ class FakeHeap:
         return item in self.reverse
 
     def __setitem__(self, addr, value):
+        assert isinstance(addr, int)
         if addr != id(value):
             self.updates += 1
         self.reverse.pop(value)
@@ -147,6 +153,7 @@ class FakeHeap:
         self.forward[addr] = value
 
     def __getitem__(self, addr):
+        assert isinstance(addr, int)
         return self.forward[addr]
 
     def __iter__(self):
@@ -254,6 +261,7 @@ class GMachine:
 
     def push(self, *addrs):
         for a in reversed(addrs):
+            assert isinstance(a, int)
             self.stack.insert(0, a)
 
     ## Stack operations with heap indirection
@@ -342,7 +350,7 @@ class GMachine:
         self.queue = list(code) + self.queue
 
     def slide(self, n):
-        top = self.pop(1)
+        [top] = self.pop(1)
         self.pop(n)
         self.push(top)
 
