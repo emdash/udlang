@@ -48,10 +48,11 @@ const tr    = ()  => el("tr");
 const td    = ()  => el("td");
 
 const datum = (k, v) => tr()
-      .append(td().append(k),
-	      td().append(v));
+      .append(td().attr("class", "label").append(k),
+	      td().attr("class", "value").append(v));
 
 const render_state = state => table()
+      .attr("class", "state")
       .append(datum("remark",      state.remark),
 	      datum("instruction", state.instruction),
 	      datum("stack",       state.stack),
