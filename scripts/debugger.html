@@ -7,18 +7,45 @@
 	  font-family: "mono";
       }
 
-      .label {
+      span {
+          display: inline-block;
+          padding: 0.25em;
+          margin: 0.25em;
+          border-radius: 0.25em;
+      }
+
+      .datum-label {
 	  font-weight: bold;
       }
 
       .value {
 	  font-style: italic;
+          background-color: #ccffcc;
+      }
+
+      .app {
+	  font-style: italic;
+          background-color: #ccccff;
+      }
+
+      .global {
+	  font-style: italic;
+          background-color: #ffcccc;
+      }
+
+      .ind {
+	  font-style: italic;
+          background-color: #ffffcc;
+      }
+
+      .ins {
+          background-color: #cccccc;
       }
     </style>
   </head>
   <body>
     <div id="content"></div>
-    <script lang="javascript" src="debuglog.json"></script>
+    <script lang="javascript" src="debug_log.js"></script>
     <script lang="javascript" src="debugger.js"></script>
   </body>
 </html>

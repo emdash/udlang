@@ -50,10 +50,11 @@ const li    = ()  => el("li");
 const table = ()  => el("table");
 const tr    = ()  => el("tr");
 const td    = ()  => el("td");
+const img   = ()  => el("img");
 
 const datum = (k, v) => tr()
-      .append(td().attr("class", "label").append(k),
-	      td().attr("class", "value").append(v));
+      .append(td().attr("class", "datum-label").append(k),
+	      td().attr("class", "datum-value").append(v));
 
 const render_value = v => { switch (v.type) {
     case "value":  return span().attr("class", "value").append(`val: ${v.value}`);
@@ -62,20 +63,29 @@ const render_value = v => { switch (v.type) {
     case "ind":    return span().attr("class", "ind").append(`ind`);
 }};
 
-const render_heap = heap => table()
+const render_heap = heap => img()
       .attr("class", "heap")
-      .append(...heap.map((key, value) => datum(key, render_value(value))))
+      .attr("src", heap.img);
+
+const render_instruction = i => span().attr("class", "ins").append(i);
+
+const render_queue = q => span()
+      .append(...q.map(render_instruction));
+
+const render_stack = (s, h) => span()
+      .append(...s.map(addr => render_value(h[addr])))
 
 const render_state = state => table()
       .attr("class", "state")
       .append(datum("remark",      state.remark),
-	      datum("instruction", state.instruction),
-	      datum("stack",       state.stack),
+	      datum("instruction", render_instruction(state.instruction)),
+              datum("queue",       render_queue(state.queue)),
+	      datum("stack",       render_stack(state.stack, state.heap.data)),
 	      datum("heap",        render_heap(state.heap)));
 
 const render = () => div()
       .attr("id", "content")
-      .append(...trace.map(render_state));
+      .append(...dump.map(render_state));
 
 
 // Trigger the actual render
