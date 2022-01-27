@@ -34,14 +34,15 @@ class Ins:
 # Name        immediates         debug name                VM operation       debug meta
 push_value  = lambda v:      Ins("push_value",  lambda vm: vm.push_value(v),  (v,     ))
 push_global = lambda g:      Ins("push_global", lambda vm: vm.push_global(g), (g,     ))
-push_arg    = lambda n:      Ins("push",        lambda vm: vm.push_arg(n),    (n,     ))
-push_local  = lambda n:      Ins("local",       lambda vm: vm.push_local(n),  (n,     ))
+push_arg    = lambda n:      Ins("push_arg",    lambda vm: vm.push_arg(n),    (n,     ))
+push_local  = lambda n:      Ins("push_local",  lambda vm: vm.push_local(n),  (n,     ))
 mk_app      =                Ins("mk_app",      lambda vm: vm.mk_app(),       (      ))
 unwind      =                Ins("unwind",      lambda vm: vm.unwind(),       (      ))
 update      = lambda n:      Ins("update",      lambda vm: vm.update(n),      (n,    ))
 pack        = lambda tag, n: Ins("pack",        lambda vm: vm.pack(tag, n),   (n, tag))
 split       =                Ins("split",       lambda vm: vm.split(),        (      ))
-cond        = lambda cases:  Ins("cond",        lambda vm: vm.cond(cases),    (      ))
+match       = lambda cases:  Ins("match",       lambda vm: vm.match(cases),   (      ))
+cond        = lambda t, e:   Ins("cond",        lambda vm: vm.cond(t, e),     (      ))
 slide       = lambda n:      Ins("slide",       lambda vm: vm.slide(n),       (n,    ))
 eval        =                Ins("eval",        lambda vm: vm.eval(),         (      ))
 binop       = lambda n, f:   Ins("binop",       lambda vm: vm.binop(f),       (n,    ))
@@ -63,48 +64,40 @@ class Node:
 @dataclass(frozen=True)
 class NVal(Node):
     value: Any
-    def dump(self):
-        return {"type": "value", "value": self.value}
+    def dump(self): return {"type": "value", "value": self.value}
 @dataclass(frozen=True)
 class NApp(Node):
     left: int
     right: int
-    def dump(self):
-        return {"type": "app", "left": self.left, "right": self.right}
+    def dump(self): return {"type": "app", "left": self.left, "right": self.right}
 @dataclass(frozen=True)
 class NGlobal(Node):
     name: str
     arity: int
     code: Tuple[Ins]
-    def dump(self):
-        return {
-            "type": "global",
-            "name": self.name,
-            "code": [str(i) for i in self.code]
-        }
+    def dump(self): return {"type": "global", "name": self.name}
 @dataclass(frozen=True)
 class NInd(Node):
     next: int
-    def dump(self):
-        return {"type": "ind", "next": self.next}
+    def dump(self): return {"type": "ind", "next": self.next}
 @dataclass(frozen=True)
 class NData(Node):
     tag: str
     data: Tuple[int]
-    def dump(self):
-        return {"type": "data", "tag": self.tag, "data": self.data}
+    def dump(self): return {"type": "data", "tag": self.tag, "data": self.data}
 
 
 class FakeHeap:
 
-    """Simulates the behavior of a memory managment heap.
+    """Simulate dynamic memory management.
 
-    We use id() to generate the initial "address" for an node.  Items
-    can be updated "in place", so this is intentionally not an
-    invariant.
+    We use id() to generate the initial "address" for a node: however,
+    this is *not* an invariant!
 
-    We can investigate easy how many "updates" the evaluator performs,
-    and how many nodes get "updated",
+    Instead, it allows us to simulate "in place" updates of memory cells.
+
+    We collect data on how many updates are performed, and we can also
+    tell which addresses have been updated.
     """
 
     def __init__(self):
@@ -130,6 +123,7 @@ class FakeHeap:
         return self.reverse[item]
 
     def insert(self, item):
+        assert isinstance(item, Node)
         if item not in self.reverse:
             return self.alloc(item)
         else:
@@ -173,6 +167,9 @@ class GMachine:
         # The instruction stream
         self.queue = list(main)
 
+        # hold the current instruction for debugging
+        self.instruction = None
+
         # Nothing special here, other than it contains heap addresses.
         self.stack = []
 
@@ -198,6 +195,7 @@ class GMachine:
         """Return a serializable copy of state for debug output"""
         json.dump(OrderedDict((
             ("remark", remark),
+            ("instruction",  str(self.instruction)),
             ("queue", list([str(i) for i in self.queue])),
             ("stack", self.stack),
             ("heap",  self.heap.dump()),
@@ -221,9 +219,9 @@ class GMachine:
 
     def step(self):
         """Run a single instruction"""
-        i = self.queue.pop(0)
-        i.eval(self)
-        self.debug_state("step(%s)" % i)
+        self.instruction = self.queue.pop(0)
+        self.instruction.eval(self)
+        self.debug_state("step(%s)" % self.instruction)
 
     def call(self, instructions, args):
         self.dump.append((self.stack, self.queue))
@@ -296,11 +294,9 @@ class GMachine:
     def unwind_global(self, top):
         assert(top.arity >= 0)
         assert(len(self.stack) > top.arity)
-        for i in range(1, n + 1):
-            self.poke(i, self.peek(i).right)
-        top.code
-        # XXX: this seems dubious... what happens to remanining instructions?
-        self.queue = top.code
+        for i in range(1, top.arity + 1):
+            self.stack[i] = self.peek(i).right
+        self.queue = list(top.code)
         self.debug_state("unwind_global")
         # XXX: do we stop unwinding here?
 
@@ -335,14 +331,22 @@ class GMachine:
     # unpack top n items to the stack
     def split(self):
         top = self.heap[self.pop()]
-        assert(isinstance(NData, top))
+        assert isinstance(NData, top)
         self.push(*top.data)
 
     # hand control to the branch given by the type tag
-    def jump(self, branches):
+    def match(self, branches):
         top = self.heap[self.pop()]
-        assert(isinstance(top, NData))
+        assert isinstance(top, NData)
         self.call(branches[top.tag], [top])
+
+    def cond(self, then, else_):
+        top = self.heap[self.pop()]
+        assert isinstance(top, NValue)
+        assert isinstance(top.value, bool)
+        # I guess this is really how it's done...
+        code = then if top.value else else_
+        self.queue = list(code) + self.queue
 
     def slide(self, n):
         top = self.pop(1)
@@ -361,23 +365,33 @@ class GMachine:
         top = self.stack.pop(0)
         self.call([Unwind], [top])
 
-
-# Simple test
+# Factorial(10)
 GMachine([
-    NGlobal("plus", 2, (
-        push_arg(1),
-        push_arg(1),
-        add,
-        update(2),
-        pop(2),
+    NGlobal("fac", 1, (
+        push_arg(0),
+        eval,
+        push_local(0),
+        push_value(0),
+        eq,
+        cond(
+            (push_value(1), slide(3), unwind),
+            ()
+        ),
+        push_global("fac"),
+        push_local(1),
+        push_value(1),
+        sub,
+        mk_app,
+        eval,
+        push_local(1),
+        mul,
+        slide(2),
+        unwind
     ))
 ], [
-    # defn main
-    push_value(6),
-    push_value(320),
-    push_global("plus"),
+    push_global("fac"),
+    push_value("10"),
     mk_app,
-    mk_app,
-    update(0),
-    pop(0),
+    slide(1),
+    unwind,
 ]).run()
