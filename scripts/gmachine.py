@@ -8,19 +8,19 @@ from collections import OrderedDict
 from dataclasses import dataclass, asdict
 from typing import Any, Callable, List, Tuple
 
-## Toy implementation of a "G-machine", which is the core of most functional
-## languages.
+## Toy implementation of a spineful, tagful "G-machine"
 ##
 ## References:
 ## - https://www.microsoft.com/en-us/research/wp-content/uploads/1992/01/student.pdf
 ## - https://danilafe.com/blog/05_compiler_execution/
-## - Special mention for:
-##   https://amelia.how/posts/the-gmachine-in-detail.html
-##   An especially clear and concise presentation of these ideas.
+## - Special mention to: https://amelia.how/posts/the-gmachine-in-detail.html
+##   The clearest, most concise presentation of these ideas I could find.
 
-# Container for in-memory instructions
+
 @dataclass(frozen=True)
 class Ins:
+    """Pretty-printable instruction values."""
+    
     name: str
     eval: callable
     meta: Tuple[Any]
@@ -31,7 +31,9 @@ class Ins:
         else:
             return self.name
 
-# Name        immediates         debug name                VM operation       debug meta
+## Table of Instructions
+
+# Name        immediates         debug name                   operation       debug data
 push_value  = lambda v:      Ins("push_value",  lambda vm: vm.push_value(v),  (v,     ))
 push_global = lambda g:      Ins("push_global", lambda vm: vm.push_global(g), (g,     ))
 push_arg    = lambda n:      Ins("push_arg",    lambda vm: vm.push_arg(n),    (n,     ))
@@ -48,8 +50,7 @@ eval        =                Ins("eval",        lambda vm: vm.eval(),         ( 
 binop       = lambda n, f:   Ins("binop",       lambda vm: vm.binop(f),       (n,    ))
 pop         = lambda n:      Ins("pop",         lambda vm: vm.pop(n),         (      ))
 
-
-# arithmetic builtins
+# primitive operations on values are a special case.
 add = binop("+", lambda x, y: x + y)
 sub = binop("-", lambda x, y: x - y)
 mul = binop("*", lambda x, y: x * y)
@@ -57,7 +58,7 @@ div = binop("/", lambda x, y: x / y)
 eq  = binop("=", lambda x, y: x == y)
 
 
-# ADT for GMachine Graph
+# Graph ADT on which the GMachine operates
 @dataclass(frozen=True)
 class Node:
     pass
@@ -89,15 +90,23 @@ class NData(Node):
 
 class FakeHeap:
 
-    """Simulate dynamic memory management.
+    """Simulates dynamic memory management.
+
+    We don't need to manage memory in python, but the G-Machine is an
+    intermediate representation intended for native compilation, and
+    it explicitly requires a heap. In particular, the nodees in the
+    ADT defined above actually store integer "pointers" to their child
+    nodes, which values are in fact indices into this fake heap.
 
     We use id() to generate the initial "address" for a node: however,
     this is *not* an invariant!
 
-    Instead, it allows us to simulate "in place" updates of memory cells.
+    Instead, we simulate "in place" updates of memory cells.
 
     We collect data on how many updates are performed, and we can also
-    tell which addresses have been updated.
+    easily tell which addresses have been updated, by whether or not
+    the id of the value matches the address.
+
     """
 
     def __init__(self):
@@ -115,7 +124,6 @@ class FakeHeap:
     def free(self, item):
         if item not in reverse:
             raise ValueError("Double Free")
-
         addr = self.reverse.pop(item)
         forward.pop(addr)
 
@@ -154,11 +162,10 @@ class FakeHeap:
     def dump(self):
         return {k: v.dump() for k, v in self}
 
-class FlowControl(BaseException):
+
+class Halt(BaseException):
     pass
 
-class Halt(FlowControl):
-    pass
 
 class GMachine:
     """Simulates the abstract machine"""
@@ -166,11 +173,6 @@ class GMachine:
     def __init__(self, globals, main):
         # The instruction stream
         self.queue = list(main)
-
-        # hold the current instruction for debugging
-        self.instruction = None
-
-        # Nothing special here, other than it contains heap addresses.
         self.stack = []
 
         # The "heap" is where our values live.
@@ -180,20 +182,25 @@ class GMachine:
         # to allow "updating" nodes.
         self.heap = FakeHeap()
 
-        # This is a stack of stack, used for function returns
+        # This is the kindof like the call stack, but not exactly,
+        # because the G-Machine is a lazy evaluator.
         self.dump = []
 
-        # Place the globals into our heap
+        # We need to "allocate" the globals on the heap (really we are
+        # just assigning addresses to them).
         self.map = {
             g.name: self.heap.insert(g)
             for g in globals
         }
 
-    ## VM Machinery
+        self.instruction = None
+        self.states = []
+
+    ## Machinery for the VM
 
     def debug_state(self, remark):
-        """Return a serializable copy of state for debug output"""
-        json.dump(OrderedDict((
+        """Return a json-serializable copy of state for debug output"""
+        self.states.append(OrderedDict((
             ("remark", remark),
             ("instruction",  str(self.instruction)),
             ("queue", list([str(i) for i in self.queue])),
@@ -201,8 +208,7 @@ class GMachine:
             ("heap",  self.heap.dump()),
             ("map",   self.map),
             ("dump",  [(map(str, s), map(str, q)) for (s, q) in self.dump])
-        )), sys.stdout, indent=2)
-        print()
+        )))
 
     def run(self):
         """Run the program to completion"""
@@ -212,10 +218,15 @@ class GMachine:
                 self.step()
         except Halt as e:
             self.debug_state("halt")
-            return e.msg
+            return e.args[0]
         except BaseException as e:
             self.debug_state("exception")
             traceback.print_exc(e, file=sys.stderr)
+        finally:
+            output = open("debuglog.json", "w")
+            output.write("const trace = ")
+            json.dump(self.states, output)
+            output.write(";")
 
     def step(self):
         """Run a single instruction"""
@@ -234,7 +245,7 @@ class GMachine:
         (self.stack, self.queue) = self.dump.pop()
         self.debug_state("ret")
 
-    # Plain stack operations
+    ## Plain stack operations
 
     def pop(self, n):
         ret = self.stack[:n]
@@ -248,7 +259,7 @@ class GMachine:
         for a in reversed(addrs):
             self.stack.insert(0, a)
 
-    # Stack operations with heap indirection
+    ## Stack operations with heap indirection
 
     def peek(self, n):
         return self.heap[self.stack[n]]
@@ -259,7 +270,7 @@ class GMachine:
     def top(self):
         return self.peek(0)
 
-    # Instruction Implementations
+    ## Instruction Implementations
 
     def push_value(self, v):
         self.push(self.heap.insert(NVal(v)))
@@ -276,65 +287,51 @@ class GMachine:
         self.push(val.right)
 
     def mk_app(self):
-        [a0, a1] = self.pop(2)
-        self.push(self.heap.insert(NApp(a0, a1)))
+        [x, f] = self.stack[:2]
+        self.push(self.heap.insert(NApp(f, x)))
 
+    # This, and the following four methods, together implement unwind.
+    # unwind is the top-level dispatch table, with a case for each of
+    # the "unwindable" nodes.
     def unwind(self):
         top = self.top()
         if   isinstance(top, NVal):    self.unwind_val(top)
         elif isinstance(top, NApp):    self.unwind_app(top)
         elif isinstance(top, NGlobal): self.unwind_global(top)
         elif isinstance(top, NInd):    self.unwind_ind(top)
-
+        else: raise ValueError("%r is not unwindable" % top)
     def unwind_app(self, top):
         self.push(top.left)
-        self.debug_state("unwind_app")
-        self.unwind()
-
     def unwind_global(self, top):
         assert(top.arity >= 0)
         assert(len(self.stack) > top.arity)
         for i in range(1, top.arity + 1):
             self.stack[i] = self.peek(i).right
         self.queue = list(top.code)
-        self.debug_state("unwind_global")
-        # XXX: do we stop unwinding here?
-
     def unwind_val(self, top):
         if self.dump:
             self.ret()
             self.push(self.heap.insert(top))
-            self.debug_state("unwind_val")
-            # XXX: do we terminate unwind recursion here?
         else:
             # unwind val with a non-empty dump means we have finished
             raise Halt(top)
-
-    # replace an indirection with what it points to.
     def unwind_ind(self, top):
         assert(isinstance(self.top(), NInd))
         # can't use poke here, top.next is an address
         self.stack[0] = self.top().next
-        self.debug_state("unwind_ind")
-        # I believe we continue unwinding?
-        self.unwind()
 
-    # replace stack entry at offset n with an indirection
     def update(self, n):
         # don't use peek here, n.next is an address
         self.poke(n, NInd(self.stack[n]))
 
-    # move top n items to a data node, with the given tag
     def pack(self, tag, n):
         self.push(NData(tag, self.stack.pop(n)))
 
-    # unpack top n items to the stack
     def split(self):
         top = self.heap[self.pop()]
         assert isinstance(NData, top)
         self.push(*top.data)
 
-    # hand control to the branch given by the type tag
     def match(self, branches):
         top = self.heap[self.pop()]
         assert isinstance(top, NData)
@@ -344,7 +341,6 @@ class GMachine:
         top = self.heap[self.pop()]
         assert isinstance(top, NValue)
         assert isinstance(top.value, bool)
-        # I guess this is really how it's done...
         code = then if top.value else else_
         self.queue = list(code) + self.queue
 
@@ -353,9 +349,8 @@ class GMachine:
         self.pop(n)
         self.push(top)
 
-    # we could generalize this to "native" or "intrinsic".
-    # this is where we hook into "native" code implemented in the host
-    # language.
+    # this could be renamed "intrinsic", or "primative", if we want to
+    # generalize beyond binary operations.
     def binop(self, op):
         a0 = self.stack.pop(0)
         a1 = self.stack.pop(0)
@@ -363,7 +358,8 @@ class GMachine:
 
     def eval(self):
         top = self.stack.pop(0)
-        self.call([Unwind], [top])
+        self.call([unwind], [top])
+
 
 # Factorial(10)
 GMachine([
@@ -382,7 +378,6 @@ GMachine([
         push_value(1),
         sub,
         mk_app,
-        eval,
         push_local(1),
         mul,
         slide(2),
