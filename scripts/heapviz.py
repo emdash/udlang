@@ -36,7 +36,7 @@ def item_label(item):
 def style_node(addr, item, edges):
     items = [item_label(item)] + ["<%s> %s" % (f, f) for (f, _) in edges]
     label = (" | ").join(items)
-    return "%s [label=%s];" % (addr, json.dumps(label))
+    return "%s [id=%s label=%s];" % (addr, addr, json.dumps(label))
 
 def make_heap_graph(heap, f):
     print("digraph {", file=f)
