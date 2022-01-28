@@ -34,24 +34,40 @@ Element.prototype.prop = function(key, value) {
     return this;
 };
 
-Element.prototype.on = function(event, handler) {
+EventTarget.prototype.on = function(event, handler) {
     this.addEventListener(event, handler);
     return this;
 };
 
+Object.prototype.using = function(func) {
+    func(this);
+    return this;
+};
+
+Element.prototype.cond = function(pred, t, e) {
+    if (pred) {
+        t && t(this);
+    } else {
+        e && e(this);
+    }
+
+    return this;
+}
+
 
 // A minimal HTML Embedded DSL
 
-const el    = tag => document.createElement(tag);
-const div   = ()  => el("div");
-const span  = ()  => el("span");
-const ul    = ()  => el("ul");
-const li    = ()  => el("li");
-const table = ()  => el("table");
-const tr    = ()  => el("tr");
-const td    = ()  => el("td");
-const img   = ()  => el("img");
-const pre   = ()  => el("pre");
+const el     = tag => document.createElement(tag);
+const div    = ()  => el("div");
+const span   = ()  => el("span");
+const ul     = ()  => el("ul");
+const li     = ()  => el("li");
+const table  = ()  => el("table");
+const tr     = ()  => el("tr");
+const td     = ()  => el("td");
+const img    = ()  => el("img");
+const pre    = ()  => el("pre");
+const button = ()  => el("button");
 
 const datum = (k, v) => tr()
       .append(td().attr("class", "datum-label").append(k),
@@ -80,7 +96,7 @@ const render_exception = exc => pre()
       .attr("class", "exception")
       .append(exc || "none");
 
-const render_state = state => table()
+const render_state = (state, index) => table()
       .attr("class", "state")
       .append(datum("remark",      state.remark),
 	      datum("instruction", render_instruction(state.instruction)),
@@ -89,10 +105,35 @@ const render_state = state => table()
 	      datum("heap",        render_heap(state.heap)),
               datum("exception",   render_exception(state.exception)));
 
-const render = () => div()
-      .attr("id", "content")
-      .append(...dump.map(render_state));
 
+const render_controls = (show, display) => div()
+      .attr("id", "controls")
+      .append(button().append("Back").on("click", () => show(x => x - 1)),
+              button().append("Forward").on("click", () => show(x => x + 1)),
+              display);
+
+function render() {
+    const content = div().attr("id", "content");
+
+    const display = span().attr("id", "display");
+    let showing = parseInt(window.localStorage.getItem("showing") || "0");
+
+    function show(update) {
+        const next = Math.max(0, Math.min(dump.length - 1, update(showing)));
+        content.children[showing + 1].removeAttribute("selected");
+        content.children[next + 1].setAttribute("selected", null);
+        display.innerHTML = next.toString();
+        window.localStorage.setItem("showing", next.toString());
+        showing = next;
+    }
+
+    // otherwise we won't see anything on refresh.
+    window.on("load", () => show(x => x));
+
+    return content.append(
+        render_controls(show, display),
+        ...dump.map(render_state));
+}
 
 // Trigger the actual render
 
