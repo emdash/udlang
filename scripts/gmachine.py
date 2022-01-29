@@ -69,27 +69,34 @@ class Node:
 @dataclass(frozen=True)
 class NVal(Node):
     value: Any
-    def dump(self): return {"type": "value", "value": self.value}
 @dataclass(frozen=True)
 class NApp(Node):
     left: int
     right: int
-    def dump(self): return {"type": "app", "left": self.left, "right": self.right}
+    def dump(self):
+        return Node.dump(
+            "app", "@",
+            ("left", self.left),
+            ("right", self.right))
 @dataclass(frozen=True)
 class NGlobal(Node):
     name: str
     arity: int
     code: Tuple[Ins]
-    def dump(self): return {"type": "global", "name": self.name}
+    def dump(self):
+        return Node.dump("global", self.name)
 @dataclass(frozen=True)
 class NInd(Node):
     next: int
-    def dump(self): return {"type": "ind", "next": self.next}
+    def dump(self):
+        return Node.dump("ind", "", ("next", self.next))
 @dataclass(frozen=True)
 class NData(Node):
     tag: str
     data: Tuple[int]
-    def dump(self): return {"type": "data", "tag": self.tag, "data": self.data}
+    def dump(self):
+        return Node.dump("data", "", *enumerate(self.data))
+
 
 
 class FakeHeap:
@@ -165,8 +172,38 @@ class FakeHeap:
             if k != id(v)
         }
 
+    def dump_(self, type_, label, *refs):
+        return {
+            "type": type_,
+            "label": label,
+            "refs": tuple(refs)
+        }
+
+    def dump_val(self, i):
+        return self.dump_("value", str(i.value))
+
+    def dump_app(self, i):
+        return self.dump_("app", "@", ("left", i.left), ("right", i.right))
+
+    def dump_global(self, i):
+        return self.dump_("global", i.name)
+
+    def dump_ind(self, i):
+        return self.dump_("ind", "", ("next", i.next))
+
+    def data_data(self, i):
+        return self.dump_("data", "",
+                          *((str(j), d) for (j, d) in enumerate(i.data)))
+
+    def dump_node(self, item):
+        if   isinstance(item, NVal):    return self.dump_val(item)
+        elif isinstance(item, NApp):    return self.dump_app(item)
+        elif isinstance(item, NGlobal): return self.dump_global(item)
+        elif isinstance(item, NInd):    return self.dump_ind(item)
+        elif isinstance(item, NData):   return self.dump_data(item)
+
     def dump(self):
-        return {k: v.dump() for k, v in self}
+        return {k: self.dump_node(v) for k, v in self}
 
 
 class Halt(BaseException):
