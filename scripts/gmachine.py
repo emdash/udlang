@@ -38,10 +38,10 @@ class Ins:
 ## Table of Instructions
 
 # Name        immediates         debug name                   operation       debug data
-push_value  = lambda v:      Ins("push_value",  lambda vm: vm.push_value(v),  (v,     ))
-push_global = lambda g:      Ins("push_global", lambda vm: vm.push_global(g), (g,     ))
-push_arg    = lambda n:      Ins("push_arg",    lambda vm: vm.push_arg(n),    (n,     ))
-push_local  = lambda n:      Ins("push_local",  lambda vm: vm.push_local(n),  (n,     ))
+push_value  = lambda v:      Ins("push_value",  lambda vm: vm.push_value(v),  (v,    ))
+push_global = lambda g:      Ins("push_global", lambda vm: vm.push_global(g), (g,    ))
+push_arg    = lambda n:      Ins("push_arg",    lambda vm: vm.push_arg(n),    (n,    ))
+push_local  = lambda n:      Ins("push_local",  lambda vm: vm.push_local(n),  (n,    ))
 mk_app      =                Ins("mk_app",      lambda vm: vm.mk_app(),       (      ))
 unwind      =                Ins("unwind",      lambda vm: vm.unwind(),       (      ))
 update      = lambda n:      Ins("update",      lambda vm: vm.update(n),      (n,    ))
@@ -292,7 +292,7 @@ class GMachine:
         self.push(val.right)
 
     def mk_app(self):
-        [x, f] = self.stack[:2]
+        [x, f] = self.pop(2)
         self.push(self.heap.insert(NApp(f, x)))
 
     # This, and the following four methods, together implement unwind.
@@ -307,13 +307,18 @@ class GMachine:
         else: raise ValueError("%r is not unwindable" % top)
     def unwind_app(self, top):
         self.push(top.left)
+        self.debug_state("unwind(app)")
+        self.unwind()
     def unwind_global(self, top):
         assert(top.arity >= 0)
         assert(len(self.stack) > top.arity)
         for i in range(1, top.arity + 1):
             self.stack[i] = self.peek(i).right
         self.queue = list(top.code)
+        self.debug_state("unwind(global)")
+        self.unwind()
     def unwind_val(self, top):
+        self.debug_state("unwind(val)")
         if self.dump:
             self.ret()
             self.push(self.heap.insert(top))
@@ -324,6 +329,8 @@ class GMachine:
         assert(isinstance(self.top(), NInd))
         # can't use poke here, top.next is an address
         self.stack[0] = self.top().next
+        self.debug_state("unwind(top)")
+        self.unwind()
 
     def update(self, n):
         # don't use peek here, n.next is an address
