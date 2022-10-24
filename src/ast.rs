@@ -253,10 +253,6 @@ pub enum Statement {
     Out(ExprNode),
     Def(String, ExprNode),
     TypeDef(String, TypeNode),
-    ListIter(String, ExprNode, ExprNode),
-    MapIter(String, String, ExprNode, ExprNode),
-    Suppose(ExprNode, ExprNode, ExprNode),
-    EffectCapture,
 }
 
 
@@ -300,7 +296,8 @@ pub enum Program {
 	decls: Seq<Statement>,
 	input: TypeNode,
 	output: TypeNode,
-	body: Seq<Statement>
+	body: Seq<Statement>,
+        output: Expr
     },
     Library {
 	desc: String,
@@ -332,7 +329,6 @@ pub struct Builder {
     pub t_str:   TypeNode,
     pub t_any:   TypeNode,
     pub t_this:  TypeNode,
-    pub effect_capture: StmtNode,
     pub exports: RefCell<Vec<Export>>,
     // TBD: hashtables to cache constants, strings, exprs, and
     // statements.
@@ -372,7 +368,6 @@ impl Builder {
 	    t_any   : Node::new(TypeTag::Any),
 	    t_this  : Node::new(TypeTag::This),
 	    exports : RefCell::new(Vec::new()),
-	    effect_capture: Node::new(Statement::EffectCapture),
 	}
     }
 
@@ -468,15 +463,6 @@ impl Builder {
     ) -> ExprNode {
 	let conds = conds.iter().cloned().collect();
 	self.subexpr(Expr::Cond(conds, else_))
-    }
-
-    pub fn suppose(
-	&self,
-	delegate: ExprNode,
-	branch: ExprNode,
-	leaf: ExprNode
-    ) -> StmtNode {
-	self.statement(Statement::Suppose(delegate, branch, leaf))
     }
 
     pub fn block(
@@ -632,20 +618,6 @@ impl Builder {
 
     // ** Statements here ***
 
-    pub fn expr_for_effect(&self, expr: ExprNode) -> StmtNode {
-	match expr.deref() {
-            Expr::Block(stmts, node) => match node.deref() {
-		Expr::Void => if stmts.len() == 1 {
-                    stmts[0].clone()
-		} else {
-                    self.statement(Statement::ExprForEffect(expr))
-		},
-		_ => self.statement(Statement::ExprForEffect(expr))
-            },
-            _ => self.statement(Statement::ExprForEffect(expr))
-	}
-    }
-
     pub fn out(&self, expr: ExprNode) -> StmtNode {
 	self.statement(Statement::Out(expr))
     }
@@ -676,40 +648,11 @@ impl Builder {
 	self.expr_for_effect(self.cond(clauses, default))
     }
 
-    pub fn list_iter(
-	&self,
-	name: &str, list: ExprNode,
-	body: ExprNode
-    ) -> StmtNode {
-	self.statement(
-	    Statement::ListIter(
-		name.to_string(),
-		list,
-		body
-	    )
-	)
-    }
-    
-    pub fn map_iter(
-	&self,
-	key: &str,
-	value: &str,
-	map: ExprNode,
-	body: ExprNode
-    ) -> StmtNode {
-	self.statement(Statement::MapIter(
-            String::from(key),
-            String::from(value),
-            map,
-            body
-	))
-    }
-
     // Export an identifier or type name.
     pub fn export(&self, name: &str) -> StmtNode {
 	self.statement(Statement::Export(Export::Name(name.to_string())))
     }
-    
+
 
     // Wrap the underlying decl as an export.
     pub fn export_decl(&self, decl: StmtNode) -> StmtNode {

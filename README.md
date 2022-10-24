@@ -88,6 +88,13 @@ implemented**.
 
 ## Project Status and Roadmap ##
 
+Reserved Words not yet assigned:
+- yield
+- return
+- total
+- partial
+- effect 
+
 The current version is `0.1-pre_mvp`.
 
  - Grammar: about 95% done.
@@ -96,10 +103,28 @@ The current version is `0.1-pre_mvp`.
  - msgpack support: TBD
  - Exceptions: TBD
 
-The goal for the MVP milestone is that uDLang should be minimally
-useful for casual coding.
+Roadmap
 
-Subsequent releases will focus on ergonomics and optimizations.
+ - 0.2:      MVP
+  - string interpolation
+  - "templates"
+  - basic IO
+  - tree-walking interpereter with type-checking pass
+ - 0.3.x:    Experiment with language features
+   - laziness
+   - effects
+   - 
+ - 0.x:      Release candidates for 1.0
+ - 1.0       Best Features from preceeding releases
+
+The goal for the MVP milestone is that uDLang should be minimally
+useful for casual coding. It will be a strict-order,
+dynamically-typed, tree-walking interpreter.
+
+Subs
+
+
+Subsequent releases will  
 
 uDLang is in its infancy. If the ideas behind uDLang exite you,
 contributions are welcome.

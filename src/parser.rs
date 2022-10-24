@@ -45,7 +45,7 @@ mod tests {
     //
     // Just because it doesn't make sense doesn't mean it's not a
     // valid test case.
-    
+
     // Helper functions for test cases.
 
     fn assert_expr(text: &'static str, ast: ast::ExprNode) {
@@ -467,111 +467,6 @@ mod tests {
     }
 
     #[test]
-    fn test_block_stmt() {
-	let ast = Builder::new();
-        assert_statement("{let x = y;}", ast.expr_for_effect(ast.block(
-            &[ast.def("x", ast.id("y"))],
-            ast.void.clone()
-	)));
-
-        assert_statement("{let x = frob(y);}", ast.expr_for_effect(ast.block(
-            &[ast.def("x", ast.call(ast.id("frob"), &[ast.id("y")]))],
-	    ast.void.clone()
-        )));
-
-        assert_statement(
-	    "{out debug(x);}",
-	    ast.out(ast.call(ast.id("debug"), &[ast.id("x")]))
-	);
-
-        assert_statement(
-            "{let x = {let y = 2; y * 3}; out x;}",
-            ast.expr_for_effect(ast.block(
-		&[
-                    ast.def("x",
-			    ast.block(
-				&[ast.def("y", ast.i(2))], 
-				ast.bin(Mul, ast.id("y"), ast.i(3))
-			    )
-                    ),
-		    ast.out(ast.id("x"))
-		],
-		ast.void.clone()
-	    ))
-	);
-    }
-
-    #[test]
-    fn test_list_iter_stmt() {
-	let ast = Builder::new();
-        let test = r#"
-              for p in points {
-                  out ["moveto", p];
-                  out ["circle", 50.0];
-              }
-        "#;
-
-	let parse = ast.list_iter(
-	    "p",
-	    ast.id("points"),
-	    ast.block(
-		&[
-		    ast.out(ast.list(&[ast.s("moveto"), ast.id("p")])),
-		    ast.out(ast.list(&[ast.s("circle"), ast.f(50.0)]))
-		],
-		ast.void.clone()
-	    )
-        );
-
-        assert_statement(test, parse);
-    }
-
-
-    #[test]
-    fn test_map_iter_stmt() {
-	let ast = Builder::new();
-        let test = r#"
-              for (k, p) in x {
-                  out ["moveto", [p.x, p.y]];
-                  out ["text", k];
-              }
-        "#;
-
-	let parse = ast.map_iter(
-	    "k", "p",
-	    ast.id("x"),
-	    ast.block(
-		&[
-		    ast.out(ast.list(&[
-			ast.s("moveto"),
-			ast.list(&[ast.dot(ast.id("p"), "x"),
-				   ast.dot(ast.id("p"), "y")])
-		    ])),
-		    ast.out(ast.list(&[ast.s("text"), ast.id("k")]))
-		],
-		ast.void.clone()
-	    )
-	);
-
-        assert_statement(test, parse);
-    }
-
-    #[test]
-    fn test_if() {
-	let ast = Builder::new();
-        assert_statement(
-            "if (a) { out [\"text\", b]; }",
-            ast.guard(
-                &[(ast.id("a"),
-		   ast.block(
-		       &[ast.out(ast.list(&[ast.s("text"), ast.id("b")]))],
-		       ast.void.clone()
-		   ))
-		],
-                None
-            )
-        );
-    }
 
     #[test]
     fn test_if_else() {

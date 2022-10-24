@@ -66,7 +66,6 @@ LibDecl: StmtNode = {
 Decl: StmtNode = {
     Import,
     FuncDef,
-    ProcDef,
     TemplateDef,
     TypeDef,
     Let,
@@ -79,16 +78,9 @@ Decl: StmtNode = {
 // - a script body.
 pub Statement: StmtNode = {
     FuncDef,
-    ProcDef,
     TypeDef,
     Effect,
     Let,
-    CondStmt,
-    Iteration,
-    EffectCapture,
-    TemplateCall,
-    NonEmptyBlockStmt => ast.expr_for_effect(<>),
-    Suppose,
 }
 
 
@@ -173,7 +165,6 @@ Export: StmtNode = {
     "export" <t:TypeName> ";"           => ast.export(t),
     "export" <id:Id> "=" <val:Expr> ";" => ast.export_decl(ast.def(id, val)),
     "export" <fd:FuncDef>               => ast.export_decl(fd),
-    "export" <pd:ProcDef>               => ast.export_decl(pd),
     "export" <td:TypeDef>               => ast.export_decl(td),
 }
 
@@ -201,12 +192,6 @@ FuncDef: StmtNode
     => ast.def(name, ast.lambda(&args, ret, body));
 
 
-// Syntatic sugar for defining a function which returns no value.
-ProcDef: StmtNode
-    = "proc" <name:Id> <args:Arglist> <body:BlockStmt>
-    => ast.def(name, ast.lambda(&args, ast.t_void.clone(), body));
-
-
 InputDecl: TypeNode
     = "input" <Type> ";" => <>;
 
@@ -225,7 +210,7 @@ OutputDecl: TypeNode
 // consumes a trailing block. This allows defining library functions
 // which feel like control structures.
 TemplateDef: StmtNode
-    = "template" <name:Id> <args:Arglist> "using" <delegate:Id> <body:BlockStmt>
+    = "template" <name:Id> <args:Arglist> "using" <delegate:Id> <body:BlockExpr>
     => ast.def(name, ast.template(&args, delegate, body));
 
 
@@ -247,75 +232,7 @@ Let: StmtNode
     => ast.def(name, value);
 
 
-// An if-else chain in a statement context
-CondStmt: StmtNode
-    = "if"
-      <first:CondStmtClause>
-      <rest:("elif" <CondStmtClause>)*>
-      <default:("else" <BlockStmt>)?>
-    => {
-        let mut clauses = vec!{first};
-        clauses.extend(rest);
-        ast.expr_for_effect(
-	    ast.cond(clauses.as_slice(),
-		     default.unwrap_or(ast.void.clone())
-	    )
-	)
-    }
-;
-
-
-// A single clause in an if-else statement.
-CondStmtClause: (ExprNode, ExprNode)
-    = "(" <pred: Expr> ")" <body: BlockStmt>
-    => (pred, body);
-
-
-// Iterate over a collection.
-Iteration: StmtNode = {
-    "for" <name:Id> "in" <list:Expr> <body:BlockStmt>
-	=> ast.list_iter(name, list, body),
-    "for" "(" <key:Id> "," <value:Id> ")" "in" <map:Expr> <body:BlockStmt>
-	=> ast.map_iter(key, value, map, body)
-}
-
-
-// A sequence of statements with nested scope.
-//
-// Unlike BlockExpr, this does *not* allow a trailing expression.  We
-// still return ExprNode here because the distinction is entirely
-// syntactic.
-BlockStmt: ExprNode = {
-    "{" <Statement+> "}" => ast.block(&<>, ast.void.clone()),
-    "{" "}" => ast.void.clone()
-}
-
-
-// A sequence of statements with nested scope.
-//
-// Unlike BlockStmt, this cannot be empty. Needed to avoid ambiguity
-// in top-level statements.
-NonEmptyBlockStmt: ExprNode
-    = "{" <Statement+> "}"
-    => ast.block(&<>, ast.void.clone());
-
-
-// Binds to captured output in suppose()
-EffectCapture: StmtNode = "..." ";" => ast.effect_capture.clone();
-
-
-// The trailing expression in a block.
-//
-// Needed to avoid the abiguity of nesting blocks, and to restrict the
-// `done` keyword to this position only. You should not be able to
-// name `void` in general.
-MaybeExpr: ExprNode = {
-    "done" => ast.void.clone(),
-    SimpleExpr,
-}
-
-
-// Any expression which is not a block. 
+// Any expression which is not a block.
 SimpleExpr: ExprNode = {
     Lambda,
     CondExpr,
@@ -341,12 +258,6 @@ CondExpr: ExprNode
 CondExprClause: (ExprNode, ExprNode)
     = "(" <pred: Expr> ")" <body: BlockExpr>
     => (pred, body);
-
-
-// The subjunctive construct, as documented in github issue #20
-Suppose: StmtNode
-    = "suppose" "(" <delegate:Expr> ")" <branch:BlockStmt> "else" <leaf:BlockStmt>
-    => ast.suppose(delegate, branch, leaf);
 
 
 // Single paramater in a function signature
@@ -375,12 +286,6 @@ Lambda: ExprNode = {
 	    ret,
 	    body
 	),
-    <args:Arglist> <body:BlockStmt>
-	=> ast.lambda(
-	    &args,
-	    ast.t_void.clone(),
-	    body
-	),
 }
 
 
@@ -389,10 +294,8 @@ Lambda: ExprNode = {
 // This trailing expression is *not* optional in an expression
 // context.
 BlockExpr: ExprNode = {
-    "{" <stmts:Statement+> <ret:MaybeExpr> "}"
+    "{" <stmts:Statement*> <ret:Expr> "}"
         => ast.block(&stmts, ret),
-    "{" <ret:MaybeExpr> "}"
-	=> ret,
 }
 
 
@@ -452,14 +355,9 @@ InvTerm: ExprNode = {
 //
 // Concept Inspired by OpenScad and Ruby. The block just gets folded
 // into the arguments.
-//
-// To simplify the grammar, templates are assumed not to return a
-// value and are purely used for their effects.
 TemplateCall: StmtNode = {
-    <func:Call> "(" <args:Args> ")" <delegate:BlockStmt>
+    <func:Call> "(" <args:Args> ")" <delegate:BlockExpr>
 	=> ast.template_call(func, &args, delegate),
-    <func:Call> "(" <args:Args> ")" ";"
-        => ast.expr_for_effect(ast.call(func, &args))
 };
 
 

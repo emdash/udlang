@@ -805,10 +805,6 @@ impl Compiler {
 	   Out(expr)           => self.compile_out(expr),
 	   Def(id, val)        => self.compile_def(id, val),
 	   TypeDef(id, t)      => self.compile_typedef(id, t),
-	   ListIter(i, l, b)   => self.compile_iter(&[i], l, b),
-	   MapIter(k, v, m, b) => self.compile_iter(&[k, v], m, b),
-	   Suppose(c, b, l)    => self.compile_subjunctive(c, b, l),
-	   EffectCapture       => self.emit(Instruction::Capture(CaptureOp::Send))
 	}
     }
 
