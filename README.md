@@ -1,455 +1,258 @@
 # uDLang #
 
-uDLang is a type-safe, pure-functional stream processor for structured binary data.
+uDLang aims to be a small, statically typed, pure functional language
+Syntax derives from C-family languages, while semantics derive from
+ML-family languages.
 
-It's a bit like `awk`, but modern, type-safe, and pure.
+The reference implementation is written in Rust and aims to be a
+practical runtime for command-line scripting and application
+embedding. It consists of a shared library and a set of command-line
+tools. Design focuses on is on low interpreter overhead with minimal
+dependencies. It is based on graph reduction.
 
-Syntax is inspired by JS, Flow, and Rust.
+As a library, uDLang aims to be principled alternative to scripting
+languages such as Lua, as well as configuration languages such as
+Yaml. As a command-line tool, uDLang also aims to be a principled
+alternative to awk, jq, perl, and python.
 
-## Example
+## A few miminal examples
 
-### Hello World
+### Fibonacci
 
 ```
-// hello_world.ud
-version 0.1-pre_mvp;
-script "hello world example";
+// fibonacci.us
 
-input  Void;
-output Str;
+version 0.2;
+script "Calculate Nth Fibonacci Number";
+input  Str;
+output Result<Str, Str>;
 
-out "Hello, World!\n";
+func fib(n: U32) -> U32 {
+    match (n) {
+        case 0: 1;
+        case 1: 1;
+        case _: fib(n - 1) + fib(n - 2);
+    }
+}
+
+try {
+    Ok("${fib(U32.parse(in))}\n")
+} catch (U32::ParseError) {
+    Err("Could not parse input!")
+} catch (U32::Overflow) {
+    Err("Result wider than 32 bits!")
+}
 ```
 
-To run:
-`cargo run -- examples/hello.ud`
+### Records Example
 
-## Why uDLang ##
+Let's imagine that we have series of temperature data, captured in
+celcius. We want to convert it to farenheit for presentation. The data
+is a stream of JSON objects, separated by newlines:
 
-On the command line, uDLang is a strongly-typed alternative to stream
-processing tools like `jq`, `awk` or `sed`.
+```
+{"time": 0, "temp": 4.5}
+{"time": 1, "temp": 4.7}
+{"time": 2, "temp": 6.2}
+{"time": 3, "temp": 7.8}
+{"time": 4, "temp": 9.5}
+{"time": 5, "temp": 11.1}
+...
+```
 
-uDLang started as a DSL for [uDash](https://github.com/emdash/udashboard).
+Script:
 
-### Why the *name* uDLang?
+```
+// temp_convert.us
+version 0.2;
+script  "Data processing example";
 
-The name is short for uDashboard Language. It's a "working title", and
-I'm open to changing it. Or maybe it stands for "universal data language".
+type   Sample: {"time": Float, "temp": Float};
+input  Sample;
+output Sample;
 
-### Overview
+func convert(t: Float) -> Float {
+  (9.0 * (t as Float) / 5.0 + 32.0)
+}
 
-uDLang is:
-- a pipeline filter.
-- record-oriented.
-- purely functional.
-- statically typed.
+match (in) {
+  case {"time": t, "temp": k}: {"time": t, "temp": convert(k)};
+}
+```
 
-Planned Features:
-- bidirectional type inference
-- structural types
+See [the manual](manual.md) for more examples.
+
+## Why uDLang? ##
+
+This is my attempt to design the pure functional language that I wish
+had existed 10 years ago: ML-flavored semantics,
+JavaScript-flavored syntax, and the flexibility of awk and Lua.
+
+uDLang began as a DSL for
+[uDash](https://github.com/emdash/udashboard), but has since become an
+outlet for my interest in programming language design. This project
+has also served as a vehicle for learning Rust.
+
+My understanding of langauge design has evolved a great deal since I
+began this project. Rust has also evolved a great deal. As a result,
+progress has been halting.
+
+Version 0.2 represents a fresh start after a prolonged hiatus. This is
+a stripped-down, streamlined version of my original vision.
+
+uDLang aims to be:
+
+- completely pure.
+- strongly, statically typed.
+- accessible.
+
+Values:
+
+- safety and correctness
+- "code you can reason about"
+- separation of concerns
+- small resource footprint
+- ease of embedding
+- accessiblity
+
+Key Features:
+
+- C-like syntax
+- static typing with generics
+- principled module system
 - pattern matching and destructuring
-- partial evaluation.
+- partial evaluation
+- string interpolation
+- extensible syntax, via *templates*.
 
-uDLang model:
-- The input is a stream of binary records (in msgpack)
-- The script is a kernel which is run to completion on each record
-- uDLang defines a native protocol for binary framing over pipes.
-- uDLang values are a superset of msgpack values.
+Anticipated Uses:
 
-uDlang companion tools (planned):
-- `udlift` and `udlower` for converting between native udlang and various other formats.
-- `udmonad` driver for stateful udlang
+- command-line batch data processing
+- application configuration, scripting, and / or queries.
+- a meta-language for custom DSLs.
 
-uDLang's bears superficial resemblence to [Koka](https://koka-lang.github.io/koka/doc/index.html)
+Sources of Inspiration
 
-**uDLang is a work in progress, not all features documented here are
-implemented**.
-
-### What uDLang is not
-
-- a general-purpose language.
-- a systems language.
-- fully implemented.
-
-### Sources of Inspiration
-
-- FlowJS, for the syntax of type annotations.
-- OilShell, another project bringing a modern approach to a traditional domain.
-- ML-family languages.
-- JavaScript, and its data-oriented subset, JSON.
-- JSON Schema
-- CDL, the most minimal approach to language design I have yet
-  encountered, and well worth pondering.
+- FlowJS / TypeScript, for the syntax
+- ML-family languages: ML, Haskell, Miranda, Clean
 - The Elm project.
 - Rust, the implementation language.
 - [Koka](https://koka-lang.github.io/koka/doc/index.html) -- a case of
   convergent evolution. Koka syntax is similar to uDLang, despite
-  being developed independently.
+  being an unrelated project.
+- The nix language.
+- Erlang, for its bitstrings.
 
-## Project Status and Roadmap ##
+## Purity and IO
 
-Reserved Words not yet assigned:
-- yield
-- return
-- total
-- partial
-- effect 
+How can a pure language allow side-effects and I/O? Well, it
+*can't*. However, since uDLang is designed for embedding, this is not
+really a problem: uDLang simply delegates I/O to the *host
+environment*.
 
-The current version is `0.1-pre_mvp`.
+More generally, a core value of the uDLang project is "separation of
+concerns". uDLang v0.2 is purely an *expression* language: it models
+data, and operations on data. It makes no attempt to include anything
+else.
 
- - Grammar: about 95% done.
- - Runtime: about 80% done.
- - Typechecker: TBD.
- - msgpack support: TBD
- - Exceptions: TBD
+### Input
 
-Roadmap
+Within uDLang, the `in` keyword referrs to the input value supplied by
+the runtime. The type of this value must conform to the `input` type
+declaration. The implementation must ensure that a script is never
+supplied with invalid input.
 
- - 0.2:      MVP
-  - string interpolation
-  - "templates"
-  - basic IO
-  - tree-walking interpereter with type-checking pass
- - 0.3.x:    Experiment with language features
-   - laziness
-   - effects
-   - 
- - 0.x:      Release candidates for 1.0
- - 1.0       Best Features from preceeding releases
+### Output
 
-The goal for the MVP milestone is that uDLang should be minimally
-useful for casual coding. It will be a strict-order,
-dynamically-typed, tree-walking interpreter.
+Every script contains a top-level expression, called the *body* which
+is evaluated to produce the output. The type of this expression must
+conform to the `output` type declaration. The implementation must not
+evaluate the script if there is a mismatch between the *body* and the
+`output` declaration.
 
-Subs
+### Host Environments
 
+#### Stand-Alone
 
-Subsequent releases will  
+The reference implementation supplies a command-line interpreter for
+evaluating stand-alone scripts. This tool supports various modes of
+operation, and a variety of common data formats, that may be flexibly
+combined in various ways.
 
-uDLang is in its infancy. If the ideas behind uDLang exite you,
-contributions are welcome.
+Not every combination of mode, value format, and framing format is
+valid. Invalid combinations will be rejected at interpreter startup.
 
-How might you use a tool like uDLang? I'd love to hear from you!
+Modes of Operation:
 
-## More Examples
+- lift        (lift a constant expression to a stream)
+- map         (stateless transformation of input stream)
+- fold        (explicitly stateful transformation of input)
+- interactive (closed loop that feeds output back to input)
+- repl        (for tinkering)
+- check       (for IDE support, CI, and other tool-chain uses)
 
-### Input / Output
+Value Formats:
 
-```
-version 0.1-pre_mvp;
-script "input example";
-input  Str;
-output Str;
+- structured
+ - internal (exchange arbitrary data between scripts)
+ - ASD (the subset of internal isomorphic to JSON)
+- plain text
+ - raw text
+ - raw/S (raw text, excluding the listed characters.
+ - tabular  (CSV and related formats)
+ - JSON
+- binary
+ - fixed-length
+ - bitstring
+ - msgpack
 
-// uDLang has one source for runtime values, the `in` expression.
-out "Hello, " + in + "\n";
+Text Framing Formats:
 
-```
+- newline-delimited text
+- null-delimited text
+- form-feed delimited text
 
-### Pattern Matching
+Binary Framing Formats:
 
-```
-version 0.1-pre_mvp;
-script "pattern matching example";
-input  "Hello" | "Goodnight";
-output Str;
+- slurp
+- fixed length packet
+- length-prefixed packet (fixed max length)
+- variable length packet, arbitrary length
 
-// uDLang supports pattern matching 
-out match in {
-  case "Hello":     "Hello, World!\n";
-  case "Goodnight": "Goodnight, Moon!\n";
-};
+#### Embedded
 
-```
+When uDLang is used as a library, with your application responsible for
+all IO.
 
-### Normalizing Structured Data
+The embedding API is dead simple, because every udlang script is
+essentially a pure function. You simply *call* your script on an input
+value, and then inspect the result it returns. Functions are provided
+for marshalling common formats, as well as for directly constructing
+and inspecting uDLang values from the host language.
 
-This example converts an array of records to a record of arrays (normalizing the output as float):
- - `[{x: 0, y: 1, z: 2}, {x: -1, y: 7, z: 3}]`, becomes
- -  `{x: [0.0, -1.1], y: [1.0, 7.0], z:[2.0, 3.0]}`.
+Memory management is similarly minimal: all memory is allocated within
+a dedicated heap, which may be freed as soon as the script output is
+no longer required. The embedding API provides convenience routines to
+transfer values into, out of, and between heaps. Alternatively, a heap
+can be recycled across invocations to take advantage of shared
+computation. Garbage collection can be optionally performed, either
+automatically according to a fixed policy, or explicitly at the
+request of the host application.
 
-```
-version 0.1-pre_mvp;
-script "Normalize list points to parallel coordinate arrays";
-
-// We can define type aliases, like so...
-type Point: {
-  x: I32 | F32;
-  y: I32 | F32;
-  z: I32 | F32;
-};
-
-// The input is an array of Point.
-input [Point];
-
-// The output is a record with parallel arrays.
-output {
-  x: [F32];
-  y: [F32];
-  z: [F32];
-};
-
-// Define a helper used below.
-func helper(item) {item.z}
-
-// Construct and emit the output.
-out {
-  // udlang relies on comprehensions and recursion.
-  // The following array comprehensions are equivalent.
-  x: [in | (item) => item.x as F32], // Explicit lambda
-  y: [in | $.y as F32],              // Partial expression
-  z: [in | helper],                  // Bound function value.
-};
-
-```
-
-### HTML Templating ###
-
-Let's imagine that we are writing a todo-list web-application. 
-As part of this, we want to convert a JSON into legible HTML.
-
-```
-{
-  "name": "Brandon's Tasks"
-  "items": [
-    {"id": 0, "name": "Get prescriptions", "status": "complete"},
-    {"id": 1, "name": "Schedule doctor's appointment", "status": "incomplete"},
-    {"id": 2, "name": "Get gravel for driveway", "status": "blocked", "blocker": 3},
-    {"id": 3, "name": "Get truck bed-liner installed"}
-  ]
-}
-```
-
-A uDLang script to to render the todo list might look like this:
-
-```
-// todo.ud
-
-// uDLang is evolving, by mandating a version string, we guard our code
-// against breaking changes to the language.
-version 0.1-pre_mvp;
-script "Todolist Example";
-
-// Import some helper functions from our html companion library (see below),
-// including the library itself.
-import html.{_, html, head, title, body, h1, h2, ul, li, div};
-
-// Define a type alias for a single todo-list item.
-// Type names must start with an upper-case letter.
-type TodoItem: {
-  id:       U32,
-  name:     Str,
-  // uDLang supports "string enums", like FlowJS.
-  status:   "complete" |  "incomplete" | "blocked";
-  // blocker is a field which, if present, is a U32.
-  blocker?: U32;
-  // If we wanted blocker to be nullable instead, we'd use
-  // blocker: U32?;
-  //
-  // The distinction is that in the former, the field can be absent,
-  // while in the latter, the slot must be present but the value can be `null`.
-  //
-  // Within the script, they both appear as Option<U32>
-};
-
-// type of `blocked` here is `(String) -> html.Element`. Note the wildcard.
-let blocked = span({class: "alert"}, "Blocked on: " + items[$].name);
-
-// A free function which formats a TodoItem as an html.Element.
-func format(self: TodoItem) -> html.Element {
-  let attrs = {class: ["todo-item", self.status].join(" ")};
-  match (self.blocker) {
-     case None:        li(attrs, self.name);
-     case Some(index): li(attrs, self.name, blocked(index));
-  }
-}
-
-// Declare the shape of the input.
-input {
-  name: Str, 
-  items: [TodoItem]
-};
-
-// Declare that the output is plain text.
-output String;
-
-// Format the document and output it.
-//
-// All allusions to HTML syntax here (`head`, `body`, etc) are plain
-// functions living in a helper library.
-out html.format(html({},
-   head({}, title({}, in.name)),
-   body({},
-     h1({}, in.name),
-     div({class: "todo-list"},
-       // uDLang supports JS-like spread syntax in function calls.
-       ul({}, ...[in.items | format])
-     )
-   )
-));
-```
-
-Let's run this example:
-
- `$ udlift --json --oneshot | udlang todo.md | udlower --text | tidy < example.json`
- 
-Where
-- `udlift --json --oneshot` reads from stdin, outputs the contents as single record, and exits.
-- `udlower --text` outputs a plain text string followed by a newline for each msgpack string it receives.
-
-We obtain the following output:
-
-**TBD**
-
-Now let's try it again on some invalid input:
-
-
-`bad.json`
-```
-{
-  "name": "Brandon's Tasks"
-  "items": [
-    {"id": -1, "name": "I am malformed"}
-  ]
-}
-```
-
- **TBD**
- 
-In this example, the input record is invalid, because the id field is signed.  
-uDlang refuses to process the input stream, because it has the wrong shape.
-uDLang is type-safe by default. 
-
-`udlift` attempts to deduce the shape of the input automatically. Use:
-- `--schema <schema_file>` to specify an explicit schema
-- `--reject` to cause `udlift` to abort when it receives invalid input
-- `--ignore` to cause `udlift` to silently drop invalid input
-- `--warn` to cause `udlift` to drop invalid input, but warn noisily about it on stderr.
-
-#### The HTML Library ####
-
-The `html` module is just a library written in udlang:
-
-```
-// html.ud
-version 0.1-pre_mvp;
-lib "Simple Html Formatting Library";
-
-// Declare the output type for this library.
-export type Output: Str;
-
-// Define an HTML Element ADT
-export type Element: {
-   tag: String,
-   attrs: {[String]: String},
-   children: [Element | String],
-   requiresClose: Bool
-};
-
-// Converts a string to an HTML-escaped string.
-func escape(text: Str) -> Str = { /* ... */ };
-// Converts a string to an html-quoted string, implementation omitted for 
-// brevity.
-func quote(text: Str) -> Str = { /* ... */ };
-               
-// Helper function for constructing elements.
-export func element(
-  tag: Str, 
-  attrs: Map<Str>,
-  allowChildren: Bool,
-  // uDLang supports JS-like "rest" parameters.
-  ...children: Element | String,
-) -> Element ! Str {
-  let requiresClose = if (allowChildren) {
-    true
-  } elif (content.length > 0) {
-    throw tag + " tags should not contain children!"
-  } else {
-    false
-  };
-
-  {tag, attrs, children, requiresClose}
-}
-
-// Format the HTML Element tree
-export func format(element: Element) -> String ! String {
-  let {tag, attrs, children, requiresClose} = element;  
-  let attributes = [attrs | escape($) + "=" + quote($)].join(" ")  
-  let open_tag   = ["<", tag, " ", attrs, ">"].join("");
-  if (requiresClose) {
-    let close_tag = ["</", tag, ">"].join("");
-    let content = [children | match ($) {
-       case Element as e: format(e);
-       case String  as s: escape(s);
-    }];
-    open_tag + content + close_tag
-  } else match (content) {
-    case None: open_tag;
-    case _:    throw tag + " tags should not contain content!";
-  }
-};
-
-// With the general definition of an HTML element in hand, we can specialize it
-// for standard tags using `$`, the "placeholder" for partial application.
-//
-// each $ is a distinct argument.
-// $... captures and spreads "rest" arguments. 
-// it may only appear when the final argument is a "rest" parameter.
-export html = element("html", $, true, $...));
-export head = element("head", $, true, $...);
-export body = element("body", $, true, $...);
-export div  = element("div",  $, true, $...);
-// ... etc
-
-// These elements cannot contain content.
-export br   = element("br", $, false);
-export hr   = element("hr", $, false);
-// ... etc
-
-```
+## Examples
 
 ## uDLang and Koka
 
-I became aware of Koka after starting uDLang. The a language is
-superficially similar to uDLang. I am not terribly familiar with
-Koka, but here's a summary of the obvious differences.
+I became aware of Koka after starting uDLang. Koka is superficially
+similar to uDLang, in that it's a pure functional language with curly
+braces. I am not terribly familiar with Koka, but here's a summary of
+the obvious differences:
 
-### Effects
-
-Koka's effect system is more expressive than uDLang's
-- uDLang has one effect: the `out` statement, which has a very specific meaning.
-- uDLang effects cannot be "handled" within the uDLang script: script evaluation terminates when
-  execution reaches an `out` statement.
-- Koka implements exceptions through its effect system, while uDLang
-  will implement exceptions as a core language feature.
-- Koka appears to be a general-purpose applications or even systems
-  language that targets native compilation, while uDLang is a pipeline filter.
-
-### Trailing Lambdas
-
-Both Koka and uDLang support "trailing lambdas" on function calls.
-  
-### Dot Notation
-
-Koka defines method call expressions like `x.f(...)`  to mean: `f(x,
-...)`.
-
-uDLang currently defines it to mean: `x["f"](...)`, but this may be about to change.
-  
-Either way, uDLang aims to guarantee method syntax will be optimized as much as possible.
-
-### Record Processing
-
-- uDLang is record-oriented, while Koka has no such notion.
-- uDLang scripts are kernels operating on a stream of records.
-- the script runs to completion for each input record received
-  - the `in` keyword, binds to the current input record
-  - the `out` keyword yields the given expression and ends the cycle.
-
-### Other features
-
-Koka uses automatic semicolon insertion similar to EcmaScript,
-whereas uDLang has no plans to implement this feature.
-Explicit semicolons are considered a feature.
-
-uDLang supports partial evaluation via the `$` operator.
+- Koka supports algebraic effects, uDLang does not model effects.
+- Koka supports IO via effects, uDLang delegates IO to the host environment.
+- Koka supports error-handling via effects, uDLang via ADTs.
+- Koka is general-purpose, while uDLang is domain-specfic.
+- Both Koka and uDLang support "trailing lambdas" on function calls --
+  but uDLang generalizes this to templates.
+- Koka uses automatic semicolon insertion, uDLang requires semicolons.
+- uDLang has special syntax for partial evaluation.
