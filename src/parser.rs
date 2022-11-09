@@ -47,6 +47,14 @@ mod tests {
     // valid test case.
 
     // Helper functions for test cases.
+    fn assert_expr_error(text: &'static str) {
+	let builder = ast::Builder::new();
+	match grammar::ExprParser::new().parse(&builder, text) {
+	    Ok(_)  => panic!("Expected error"),
+	    Err(_) => ()
+	}
+
+    }
 
     fn assert_expr(text: &'static str, ast: ast::ExprNode) {
 	let builder = ast::Builder::new();
@@ -304,25 +312,6 @@ mod tests {
     }
 
     #[test]
-    fn test_has() {
-	let ast = Builder::new();
-        assert_expr(
-            "foo.?.bar",
-            ast.has(ast.id("foo"), "bar")
-        );
-
-        assert_expr(
-            "foo.bar.?.baz",
-            ast.has(ast.dot(ast.id("foo"), "bar"), "baz")
-        );
-
-        assert_expr(
-            "foo.?.bar()",
-            ast.call(ast.has(ast.id("foo"), "bar"), &[])
-        );
-    }
-
-    #[test]
     fn test_index() {
 	let ast = Builder::new();
         assert_expr(
@@ -367,8 +356,8 @@ mod tests {
         );
 
 	assert_expr(
-            "foo[3].bar.baz[5][6].?.baz",
-	    ast.has(
+            "foo[3].bar.baz[5][6].baz",
+	    ast.dot(
 		ast.index(
                     ast.index(
 			ast.dot(
@@ -420,12 +409,6 @@ mod tests {
     #[test]
     fn test_simple_statement() {
 	let ast = Builder::new();
-        assert_statement("out \"fill\";", ast.out(ast.s("fill")));
-        assert_statement(
-            "out moveto(x, y);",
-            ast.out(ast.call(ast.id("moveto"), &[ast.id("x"), ast.id("y")]))
-        );
-
         assert_statement(
             "let y = x * 3 + 4;",
             ast.def("y", ast.bin(Add, ast.bin(Mul, ast.id("x"), ast.i(3)), ast.i(4)))
@@ -445,11 +428,6 @@ mod tests {
             ast.bin(Mul, ast.id("y"), ast.i(4))
         ));
 
-        assert_expr("{out debug(x); x}", ast.block(
-            &[ast.out(ast.call(ast.id("debug"), &[ast.id("x")]))],
-            ast.id("x")
-        ));
-
         assert_expr(
             "{let x = {let y = 2; y * 3}; x}",
             ast.block(
@@ -467,152 +445,6 @@ mod tests {
     }
 
     #[test]
-
-    #[test]
-    fn test_if_else() {
-	let ast = Builder::new();
-        assert_statement(
-            r#"if (a) { out a; } else { out "error"; }"#,
-            ast.guard(
-                &[(ast.id("a"),
-		   ast.block(
-		       &[ast.out(ast.id("a"))],
-		       ast.void.clone()
-		   ))
-		],
-                Some(ast.out(ast.s("error")))
-            )
-        );
-    }
-
-    #[test]
-    fn test_if_elif_else() {
-	let ast = Builder::new();
-        assert_statement(
-            r#"if (a) {
-               out "a";
-            } elif (b) {
-               out "b";
-            } else {
-               out "error";
-            }"#,
-            ast.guard(
-                &[
-                    (ast.id("a"), ast.block(&[ast.out(ast.s("a"))], ast.void.clone())),
-                    (ast.id("b"), ast.block(&[ast.out(ast.s("b"))], ast.void.clone())),
-                ],
-                Some(ast.out(ast.s("error")))
-            )
-        );
-
-        assert_statement(
-            r#"if (a) {
-               out "a";
-            } elif (b) {
-               out "b";
-            } elif (c) {
-               out "c";
-            } else {
-               out "error";
-            }"#,
-            ast.guard(
-                &[
-                    (ast.id("a"), ast.block(&[ast.out(ast.s("a"))], ast.void.clone())),
-                    (ast.id("b"), ast.block(&[ast.out(ast.s("b"))], ast.void.clone())),
-                    (ast.id("c"), ast.block(&[ast.out(ast.s("c"))], ast.void.clone())),
-                ],
-                Some(ast.out(ast.s("error")))
-            )
-        );
-    }
-
-    #[test]
-    fn test_if_elif() {
-	let ast = Builder::new();
-        assert_statement(
-            r#"if (a) {
-               out "a";
-            } elif (b) {
-               out "b";
-            }"#,
-            ast.guard(
-                &[
-                    (ast.id("a"), ast.block(&[ast.out(ast.s("a"))], ast.void.clone())),
-                    (ast.id("b"), ast.block(&[ast.out(ast.s("b"))], ast.void.clone())),
-                ],
-                None
-            )
-        );
-
-        assert_statement(
-            r#"if (a) {
-               out "a";
-            } elif (b) {
-               out "b";
-            } elif (c) {
-               out "c";
-            }"#,
-            ast.guard(
-                &[
-                    (ast.id("a"), ast.block(&[ast.out(ast.s("a"))], ast.void.clone())),
-                    (ast.id("b"), ast.block(&[ast.out(ast.s("b"))], ast.void.clone())),
-                    (ast.id("c"), ast.block(&[ast.out(ast.s("c"))], ast.void.clone())),
-                ],
-                None
-            )
-        );
-    }
-
-    #[test]
-    fn test_template_call() {
-	let ast = Builder::new();
-        assert_statement("foo();", ast.expr_for_effect(
-            ast.call(ast.id("foo"), &[])
-        ));
-
-        assert_statement(
-            "foo() { out \"paint\";}",
-            ast.template_call(ast.id("foo"), &[], ast.block(
-		&[ast.out(ast.s("paint"))],
-		ast.void.clone()
-	    ))
-        );
-
-        assert_statement(
-            r#"
-            foo(x) {
-                bar(y, z) {
-                   gronk();
-                   frobulate();
-                }
-                frobulate();
-            }
-            "#,
-            ast.template_call(
-		ast.id("foo"),
-		&[ast.id("x")],
-		ast.block(
-		    &[
-			ast.template_call(
-			    ast.id("bar"),
-			    &[ast.id("y"), ast.id("z")],
-			    ast.block(
-				&[
-				    ast.expr_for_effect(ast.call(ast.id("gronk"), &[])),
-				    ast.expr_for_effect(ast.call(ast.id("frobulate"), &[]))
-				],
-				ast.void.clone()
-			    )
-			),
-			ast.expr_for_effect(ast.call(ast.id("frobulate"), &[]))
-		    ],
-		    ast.void.clone()
-		),
-	    )
-        );
-    }
-
-    #[test]
     fn test_lambda_expr() {
 	let ast = Builder::new();
         assert_expr(
@@ -623,23 +455,20 @@ mod tests {
 	let ast = Builder::new();
         assert_expr(
             "() -> {Any} {{}}",
-            ast.lambda(&[], ast.t_map(ast.t_any.clone()), ast.map(&[]))
+            ast.lambda(&[], ast.t_map(ast.t_any.clone()), ast.block(&[], ast.map(&[])))
         );
 
-        assert_expr(
-            "() {}",
-            ast.lambda(&[], ast.t_void.clone(), ast.void.clone())
-        );
+        assert_expr_error("() {}");
 
 	assert_expr(
             "() -> Int {4}",
-            ast.lambda(&[], ast.t_int.clone(), ast.i(4))
+            ast.lambda(&[], ast.t_int.clone(), ast.block(&[], ast.i(4)))
         );
 
 	
 	assert_expr(
             "() -> Void {done}",
-            ast.lambda(&[], ast.t_void.clone(), ast.void.clone())
+            ast.lambda(&[], ast.t_void.clone(), ast.block(&[], ast.id("done")))
         );
 
 
@@ -697,237 +526,9 @@ mod tests {
 	assert_expr("in.foo", ast.dot(ast.in_.clone(), "foo"));
 	assert_expr("in[0]", ast.index(ast.in_.clone(), ast.i(0)));
 	assert_statement("let y = in;", ast.def("y", ast.in_.clone()));
-
-	assert_statement(
-	    r#"
-            for i in in { out i; }
-            "#,
-	    ast.list_iter(
-		"i",
-		ast.in_.clone(),
-		ast.block(&[ast.out(ast.id("i"))], ast.void.clone())
-	    )
-	);
-
-	assert_statement(
-	    r#"
-            for i in in.items { out i; }
-            "#,
-	    ast.list_iter(
-		"i",
-		ast.dot(ast.in_.clone(), "items"),
-		ast.block(&[ast.out(ast.id("i"))], ast.void.clone())
-	    )
-	);
     }
 
     // Test parsing of Types and Type Expressions
-    
-    #[test]
-    fn test_type_record_empty() {
-	let ast = Builder::new();
-	assert_type(
-	    r#"{}"#,
-	    ast.record(&[])
-	);
-    }
-
-    #[test]
-    fn test_type_record_simple() {
-	let ast = Builder::new();
-	assert_type(
-	    r#"{field x: Int}"#,
-	    ast.record(&alist!{
-		"x" => Member::Field(ast.t_int.clone())
-	    })
-	);
-
-	assert_type(
-	    r#"{field? x: Int}"#,
-	    ast.record(&alist!{
-		"x" => Member::OptionField(ast.t_int.clone())
-	    })
-	);
-    }
-
-    #[test]
-    fn test_type_record_complex() {
-	let ast = Builder::new();
-
-	let dist = Member::Method(
-	    alist(&alist!{"other" => ast.t_this.clone()}.to_vec()),
-	    ast.t_float.clone(),
-	    ast.block(
-		&[
-		    ast.def("dx", ast.bin(Sub, ast.dot(ast.this.clone(), "x"), ast.dot(ast.id("other"), "x"))),
-		    ast.def("dy", ast.bin(Sub, ast.dot(ast.this.clone(), "y"), ast.dot(ast.id("other"), "y"))),
-		],
-		ast.call(
-		    ast.id("sqrt"),
-		    &[
-			ast.bin(Add,
-			    ast.bin(Mul, ast.id("dx"), ast.id("dx")),
-			    ast.bin(Mul, ast.id("dy"), ast.id("dy"))
-			)
-		    ]
-		)
-	    )
-	);
-    
-	let from_polar = Member::StaticMethod(
-	    alist(&alist!{
-		"r" => ast.t_float.clone(),
-		"theta" => ast.t_float.clone()
-	    }),
-	    ast.t_this.clone(),
-	    ast.map(&alist!{
-		"x" => ast.bin(Mul, ast.id("r"), ast.call(ast.id("cos"), &[ast.id("theta")])),
-		"y" => ast.bin(Mul, ast.id("r"), ast.call(ast.id("sin"), &[ast.id("theta")]))
-	    })
-	);
-
-	let origin = Member::StaticValue(
-	    ast.t_this.clone(),
-	    ast.map(&alist!{
-		"x" => ast.f(0.0),
-		"y" => ast.f(0.0)
-	    })
-	);
-
-	// A plausible point or vector type.
-	assert_type(
-	    r#"{
-               field x: Float;
-               field y: Float;
-
-               method dist(other: Self) -> Float {
-                  let dx = self.x - other.x;
-                  let dy = self.y - other.y;
-                  sqrt(dx * dx + dy * dy)
-               };
-
-               static fromPolar(r: Float, theta: Float) -> Self {
-                  x: r * cos(theta),
-                  y: r * sin(theta),
-               };
- 
-               const origin: Self = {x: 0.0, y: 0.0};
-            }"#,
-	    ast.record(&alist!{
-		"x"         => Member::Field(ast.t_float.clone()),
-		"y"         => Member::Field(ast.t_float.clone()),
-		"dist"      => dist,
-		"fromPolar" => from_polar,
-		"origin"    => origin
-	    })
-	);
-    }
-
-
-    #[test]
-    fn test_type_union() {
-	let ast = Builder::new();
-
-	assert_type(
-	    r#"Int | Float"#,
-	    ast.union(&[ast.t_int.clone(), ast.t_float.clone()])
-	);
-
-	assert_type(
-	    r#"| Int"#,
-	    ast.t_int.clone()
-	);
-
-	assert_type(
-	    r#"| Int | Float"#,
-	    ast.union(&[ast.t_int.clone(), ast.t_float.clone()])
-	);
-
-	assert_type(
-	    r#"Int | Float | Str"#,
-	    ast.union(&[ast.t_int.clone(), ast.union(&[
-		ast.t_float.clone(),
-		ast.t_str.clone()
-	    ])])
-	);
-
-	assert_type(
-	    r#"| Int | Float | Str"#,
-	    ast.union(&[ast.t_int.clone(), ast.union(&[
-		ast.t_float.clone(),
-		ast.t_str.clone()
-	    ])])
-	);
-
-	assert_type(
-	    r#"| Int | [Int] | Str"#,
-	    ast.union(&[ast.t_int.clone(), ast.union(&[
-		ast.t_list(ast.t_int.clone()),
-		ast.t_str.clone()
-	    ])])
-	); 
-
-	assert_type(
-	    r#"[Int | [Int] | Str]"#,
-	    ast.t_list(
-		ast.union(&[ast.t_int.clone(), ast.union(&[
-		    ast.t_list(ast.t_int.clone()),
-		    ast.t_str.clone()
-		])])
-	    )
-	);
-
-	assert_type(
-	    r#"[| Int | [Int] | Str]"#,
-	    ast.t_list(
-		ast.union(&[ast.t_int.clone(), ast.union(&[
-		    ast.t_list(ast.t_int.clone()),
-		    ast.t_str.clone()
-		])])
-	    )
-	);
-
-	assert_type(
-	    r#"| [| Int | [Int] | Str]"#,
-	    ast.t_list(
-		ast.union(&[ast.t_int.clone(), ast.union(&[
-		    ast.t_list(ast.t_int.clone()),
-		    ast.t_str.clone()
-		])])
-	    )
-	);
-
-	assert_type(
-	    r#"| [| Int | [Int] | Str] | Bool"#,
-	    ast.union(&[
-		ast.t_list(ast.union(&[
-		    ast.t_int.clone(),
-		    ast.union(&[
-			ast.t_list(ast.t_int.clone()),
-			ast.t_str.clone()
-		    ])])
-		),
-		ast.t_bool.clone()
-	    ])
-	);
-
-	assert_type(
-	    r#"| Int | [Int] | Str | Bool"#,
-	    ast.union(&[
-		ast.t_int.clone(),
-		ast.union(&[
-		    ast.t_list(ast.t_int.clone()),
-		    ast.union(&[
-			ast.t_str.clone(),
-			ast.t_bool.clone()
-		    ])
-		])
-	    ])
-	);
-    }
-
-    // Test parsing of Statements.
-
     #[test]
     fn test_statement_function_def() {
 	let ast = Builder::new();
@@ -938,22 +539,8 @@ mod tests {
                 ast.lambda(
 		    &alist!{"y" => ast.t_int.clone()},
                     ast.t_int.clone(),
-                    ast.bin(Mul, ast.i(4), ast.id("y"))
+                    ast.block(&[], ast.bin(Mul, ast.i(4), ast.id("y")))
 		)
-            )
-        );
-
-        assert_statement(
-            r#"proc foo(y: Int) {
-               out "paint";
-            }"#,
-            ast.def(
-                "foo",
-                ast.lambda(
-                    &alist!{"y" => ast.t_int.clone()},
-                    ast.t_void.clone(),
-                    ast.block(&[ast.out(ast.s("paint"))], ast.void.clone())
-                )
             )
         );
     }
@@ -993,13 +580,14 @@ mod tests {
             import foo;
             input Str;
             output Str;
+            "hello, world"
             "#,
 	    ast.script(
 		"Minimal Import Test",
 		&[ast.import("foo", None)],
 		ast.t_str.clone(),
 		ast.t_str.clone(),
-		&[]
+		ast.s("hello, world")
 	    )
 	);
     }
@@ -1014,13 +602,14 @@ mod tests {
             import foo._;
             input Str;
             output Str;
+            "foo"
             "#,
 	    ast.script(
 		"Minimal Import Test",
 		&[ast.import("foo", Some(ast::ImportSelector::Itself))],
 		ast.t_str.clone(),
 		ast.t_str.clone(),
-		&[]
+		ast.s("foo")
 	    )
 	);
     }
@@ -1035,13 +624,14 @@ mod tests {
             import foo.*;
             input Str;
             output Str;
+            "foo"
             "#,
 	    ast.script(
 		"Minimal Import Test",
 		&[ast.import("foo", Some(ast::ImportSelector::All))],
 		ast.t_str.clone(),
 		ast.t_str.clone(),
-		&[]
+		ast.s("foo")
 	    )
 	);
     }
@@ -1056,13 +646,14 @@ mod tests {
             import foo.bar;
             input Str;
             output Str;
+            "foo"
             "#,
 	    ast.script(
 		"Minimal Import Test",
 		&[ast.import("foo", Some(ast.import_item("bar")))],
 		ast.t_str.clone(),
 		ast.t_str.clone(),
-		&[]
+		ast.s("foo")
 	    )
 	);
     }
@@ -1076,14 +667,15 @@ mod tests {
             script "Minimal Import Test";
             import foo.bar as baz;
             input Str;
-            output [Str | Float];
+            output Float;
+            3.14
             "#,
 	    ast.script(
 		"Minimal Import Test",
 		&[ast.import("foo", Some(ast.import_alias("bar", "baz")))],
 		ast.t_str.clone(),
-		ast.t_list(ast.union(&[ast.t_str.clone(), ast.t_float.clone()])),
-		&[]
+		ast.t_float.clone(),
+		ast.f(3.14)
 	    )
 	);
     }
@@ -1103,6 +695,7 @@ mod tests {
             };
             input Str;
             output Str;
+            "foo"
             "#,
 	    ast.script(
 		"Minimal Import Test",
@@ -1122,7 +715,7 @@ mod tests {
 		)],
 		ast.t_str.clone(),
 		ast.t_str.clone(),
-		&[]
+		ast.s("foo")
 	    )
 	);
     }
@@ -1135,14 +728,15 @@ mod tests {
             version 0.1-pre_mvp;
             script "Test Shebang";
             input Str;
-            output [Str | Float];
+            output [Float];
+            [3.14, 2.71]
             "#,
 	    ast.script(
 		"Test Shebang",
 		&[],
 		ast.t_str.clone(),
-		ast.t_list(ast.union(&[ast.t_str.clone(), ast.t_float.clone()])),
-		&[]
+		ast.t_list(ast.t_float.clone()),
+		ast.list(&[ast.f(3.14), ast.f(2.71)])
 	    )
 	);
     }
@@ -1159,43 +753,15 @@ mod tests {
             /* Here's a lengthy comment.
              * It spans multiple
              * lines. But it ends here. */
-            output [Str | Float];
+            output [Str];
+            "foo"
             "#,
 	    ast.script(
 		"Test Comments",
 		&[],
 		ast.t_str.clone(),
-		ast.t_list(ast.union(&[ast.t_str.clone(), ast.t_float.clone()])),
-		&[]
-	    )
-	);
-    }
-    
-    #[test]
-    fn test_suppose() {
-	let ast = Builder::new();
-	assert_statement(
-	    r#"
-            suppose(she_may_love_you()) {
-               out "She loves you,";
-               ...;
-               ...;
-               ...;
-            } else {
-               out "Yesterdayyyyyy.....";
-            }
-            "#,
-	    ast.suppose(
-		ast.call(ast.id("she_may_love_you"), &[]),
-		ast.block(&[
-		    ast.out(ast.s("She loves you,")),
-		    ast.effect_capture.clone(),
-		    ast.effect_capture.clone(),
-		    ast.effect_capture.clone()
-		], ast.void.clone()),
-		ast.block(&[
-		    ast.out(ast.s("Yesterdayyyyyy....."))
-		], ast.void.clone())
+		ast.t_list(ast.t_str.clone()),
+		ast.s("foo")
 	    )
 	);
     }

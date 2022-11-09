@@ -12,7 +12,6 @@ pub enum TypeError {
     Undefined(String),
     ListIndexMustBeInt(TypeNode),
     KeyError(Map<TypeTag>, String),
-    FieldError(AList<Member>, String),
     NotOneOf(Seq<TypeTag>),
     NotIterable(TypeNode),
     NotCallable(TypeNode),
@@ -52,7 +51,7 @@ impl TypeChecker {
         match types.len() {
             0 => Node::new(TypeTag::Void),
             1 => types.pop().unwrap(),
-            _ => Node::new(TypeTag::Union(types))
+	    _ => panic!("unpossible")
         }
     }
 
@@ -65,23 +64,6 @@ impl TypeChecker {
         }
     }
 
-    // Helper function to lookup a type in a record
-    //
-    // XXX: see github issue #10
-    pub fn record_lookup(&self, members: &AList<Member>, name: &String) -> TypeExpr {
-	if let Some(member) = members.iter().find(|m| m.0 == *name) {
-	    match &*member.1 {
-		Member::Field(tt) => Ok(tt.clone()),
-		Member::OptionField(tt) => Ok(tt.clone()),
-		Member::Method(args, ret, body) => self.eval_lambda(args, ret, body),
-		Member::StaticValue(t, _) => Ok(t.clone()),
-		Member::StaticMethod(args, ret, body) => self.eval_lambda(args, ret, body)
-	    }
-	} else {
-	    Err(TypeError::FieldError(members.clone(), name.clone()))
-	}
-    }
-
     pub fn eval_expr(&self, expr: &Expr) -> TypeExpr {
         match expr {
             Expr::Void               => Ok(Node::new(TypeTag::Void)),
@@ -89,17 +71,13 @@ impl TypeChecker {
             Expr::Int(_)             => Ok(Node::new(TypeTag::Int)),
             Expr::Float(_)           => Ok(Node::new(TypeTag::Float)),
             Expr::Str(_)             => Ok(Node::new(TypeTag::Str)),
-            Expr::Point(_, _)        => Ok(Node::new(TypeTag::Point)),
-	    Expr::This               => self.eval_this(),
 	    Expr::In                 => self.eval_in(),
 	    Expr::Partial            => Err(TypeError::NotImplemented),
             Expr::List(items)        => self.eval_list(items),
             Expr::Map(items)         => self.eval_map(items),
             Expr::Id(name)           => self.eval_id(name),
             Expr::Dot(obj, key)      => self.eval_dot(obj, key),
-	    Expr::Has(_, _)          => Ok(Node::new(TypeTag::Bool)),
             Expr::Index(lst, i)      => self.eval_index(lst, i),
-            Expr::Cond(cases, def)   => self.eval_cond(cases, def),
             Expr::Block(stmts, ret)  => self.eval_block(stmts, ret),
             Expr::BinOp(op, l, r)    => self.eval_binop(*op, l, r),
             Expr::UnOp(op, operand)  => self.eval_unop(*op, operand),
@@ -124,12 +102,8 @@ impl TypeChecker {
         Ok(Node::new(TypeTag::List(Self::narrow(items?))))
     }
 
-    pub fn eval_map(&self, fields: &Map<Expr>) -> TypeExpr {
-        let fields: Result<Map<TypeTag>, TypeError> = fields
-            .iter()
-            .map(|(k, v)| Ok((k.clone(), self.eval_expr(v)?)))
-            .collect();
-        Ok(Node::new(TypeTag::MapExpr(fields?)))
+    pub fn eval_map(&self, _fields: &Map<Expr>) -> TypeExpr {
+	Err(TypeError::NotImplemented)
     }
 
     pub fn eval_id(&self, name: &String) -> TypeExpr {
@@ -141,12 +115,10 @@ impl TypeChecker {
         }
     }
 
-    pub fn eval_dot(&self, obj: &ExprNode, field: &String) -> TypeExpr {
+    pub fn eval_dot(&self, obj: &ExprNode, _field: &String) -> TypeExpr {
         let obj = self.eval_expr(obj)?;
         match obj.deref() {
 	    TypeTag::Map(t) => Ok(t.clone()),
-            TypeTag::MapExpr(items) => Self::map_lookup(items, field),
-	    TypeTag::Record(members) => self.record_lookup(members, field),
             _ => Err(NotAMap(obj.clone()))
         }
     }
@@ -178,37 +150,6 @@ impl TypeChecker {
         }
     }
 
-    pub fn eval_cond(
-        &self,
-        cases: &PairSeq<Expr>,
-        default: &ExprNode
-    ) -> TypeExpr {
-        let conds: Result<Seq<TypeTag>, TypeError> = cases
-            .iter()
-            .map(|case| Ok(self.eval_expr(&case.0)?.clone()))
-            .collect();
-
-        let conds = conds?
-            .iter()
-            .cloned()
-            .find(|type_| type_.deref() != &TypeTag::Bool);
-
-        let exprs: Result<Seq<TypeTag>, TypeError> = cases
-            .iter()
-            .map(|case| Ok(self.eval_expr(&case.1)?.clone()))
-            .collect();
-
-        let mut exprs = exprs?;
-        exprs.push(self.eval_expr(&default)?);
-
-        match conds {
-            None => Ok(Self::narrow(exprs)),
-            Some(wrong_type) => Err(
-                Mismatch(wrong_type, Node::new(TypeTag::Bool))
-            )
-        }
-    }
-
     pub fn eval_binop(
         &self,
         op: BinOp,
@@ -231,10 +172,9 @@ impl TypeChecker {
     pub fn eval_unop(&self, op: UnOp, operand: &ExprNode) -> TypeExpr {
         use TypeTag as TT;
         let type_ = self.eval_expr(operand)?;
-        let numeric = Node::new(TT::Union(vec! {
-            Node::new(TT::Int),
-            Node::new(TT::Float)
-        }));
+	// XXX: this is wrong, should be union of int and float, but
+	// types are being redefined.
+        let numeric = Node::new(TT::Int);
         match (op, type_.deref()) {
             (UnOp::Not, TT::Bool)  => Ok(Node::new(TT::Bool)),
             (UnOp::Not, _)         => Err(Mismatch(type_, Node::new(TT::Bool))),
@@ -300,9 +240,6 @@ impl TypeChecker {
         let result = self.eval_expr(expr)?;
         match result.deref() {
             TypeTag::Map(item_type) => Ok(item_type.clone()),
-	    TypeTag::MapExpr(items) => Ok(Self::narrow(
-		items.values().cloned().collect())
-	    ),
 	    _                       => Err(NotIterable(result))
         }
     }
@@ -339,41 +276,23 @@ impl TypeChecker {
 		Export::Decl(decl) => self.check_statement(decl),
 		Export::Name(_) => Err(TypeError::NotImplemented)?
 	    }?,
-
-	    Statement::Suppose(_, _, _) => Err(TypeError::NotImplemented)?,
-	    Statement::EffectCapture => Err(TypeError::NotImplemented)?,
-		
-            Statement::ExprForEffect(body) => {
-                self.is_void(body)?;
-            },
-            Statement::Out(_expr) =>
-   	        /* XXX: expr must resolve to the declared output type */
-		Err(TypeError::NotImplemented)?,
             Statement::Def(name, val) => {
                 self.types.define(name, &self.eval_expr(val)?);
             },
 	    Statement::TypeDef(name, t) => {
 		self.types.define(name, &t);
 	    },
-            Statement::ListIter(iter, lst, body) => {
-                let item = self.is_list(lst)?;
-                let env = Env::chain(&self.types);
-                let sub = TypeChecker::new(env);
-                sub.types.define(iter, &item);
-                sub.eval_expr(body)?;
-            },
-            Statement::MapIter(k, v, map, body) => {
-                // TODO: raise proper error, rather than crashing.
-                assert!(k != v, "cannot be the same");
-                let item = self.is_map(map)?;
-                let env = Env::chain(&self.types);
-                let sub = TypeChecker::new(env);
-                sub.types.define(k, &Node::new(TypeTag::Str));
-                sub.types.define(v, &item);
-                sub.eval_expr(&body)?;
-            },
         };
         Ok(())
+    }
+
+    fn check_script_body(&self, body: &ExprNode, output: &TypeNode) -> TypeCheck {
+	let result_type = self.eval_expr(body)?;
+	if result_type == *output {
+	    Ok(())
+	} else {
+	    Err(Mismatch(output.clone(), result_type))
+	}
     }
 
     // Entry point to the type checker.
@@ -389,20 +308,17 @@ impl TypeChecker {
     // the type information we collected to be used for code-gen.
     pub fn check_program(&self, prog: Program) -> TypeCheck {
 	match prog {
-	    Program::Script { desc: _, decls, input: _, output: _, body } => {
+	    Program::Script { desc: _, decls, input: _, output, body } => {
 		for statement in decls {
 		    self.check_statement(&statement)?;
 		}
-		for statement in body {
-		    self.check_statement(&statement)?;
-		}
+		self.check_script_body(&body, &output)?;
 	    },
 	    Program::Library { desc: _, decls } => {
 		for statement in decls {
 		    self.check_statement(&statement)?;
 		}
 	    }
-	    
 	};
         Ok(())
     }
@@ -436,24 +352,6 @@ mod tests {
 	} }
     );
 
-    #[test]
-    fn test_simple() {
-	let ast = Builder::new();
-
-	let expr = ast.map(&[
-            ("foo", ast.i(42)),
-            ("bar", ast.s("baz")),
-            ("quux", ast.list(&[ast.i(1), ast.i(2), ast.i(3)]))
-        ]);
-
-	let t = ast.map_expr(&[
-            ("foo", ast.t_int.clone()),
-            ("bar", ast.t_str.clone()),
-            ("quux", ast.t_list(ast.t_int.clone()))
-	]);
-    
-        assert_types_to(Env::root(), &expr, &Ok(t));
-    }
 
     #[test]
     fn test_list() {
@@ -469,17 +367,6 @@ mod tests {
 	    Env::root(),
 	    &ast.list(&[ast.f(42.0), ast.f(3.0), ast.f(4.0)]),
 	    &Ok(ast.t_list(ast.t_float.clone()))
-	);
-
-	assert_types_to(
-	    Env::root(),
-	    &ast.list(&[ast.i(42), ast.f(2.0), ast.s("foo")]),
-	    &Ok(ast.t_list(
-		ast.union(&[
-		    ast.t_int.clone(),
-		    ast.t_float.clone(),
-		    ast.t_str.clone()]))
-	    )
 	);
     }
 
@@ -502,111 +389,8 @@ mod tests {
 
     #[test]
     fn test_dot() {
-	let ast = Builder::new();
-
-        assert_types_to(
-            env! {"x" => ast.map_expr(&alist! {"foo" => ast.t_str.clone()})},
-            &ast.dot(ast.id("x"), "foo"),
-            &Ok(ast.t_str.clone())
-        );
-
-	assert_types_to(
-            env! {"x" => ast.map_expr(&alist! {"foo" => ast.t_str.clone()})},
-            &ast.dot(ast.id("x"), "bar"),
-            &Err(KeyError(map! {"foo" => ast.t_str.clone()}, "bar".to_string()))
-        );
-	
-	assert_types_to(
-            env! {"x" => ast.map_expr(&alist! {"foo" => ast.t_str.clone()})},
-            &ast.dot(ast.i(42), "bar"),
-            &Err(NotAMap(ast.t_int.clone()))
-        );
-
-	assert_types_to(
-            env! {"x" => ast.map_expr(&alist! {
-		"foo" => ast.map_expr(&alist! {
-		    "bar" => ast.t_int.clone()
-		})
-	    })},
-	    &ast.dot(ast.dot(ast.id("x"), "foo"), "bar"),
-	    &Ok(ast.t_int.clone())
-	);
-
-	assert_types_to(
-            env! {"x" => ast.map_expr(&alist! {
-		"foo" => ast.map_expr(&alist! {
-		    "bar" => ast.t_int.clone()
-		})
-	    })},
-	    &ast.dot(ast.dot(ast.id("x"), "foo"), "baz"),
-	    &Err(
-		KeyError(
-		    map! {"bar" => ast.t_int.clone()},
-		    "baz".to_string()
-		)
-	    )
-	);
-    }
-
-
-    #[test]
-    fn test_list_iter() {
-	let ast = Builder::new();
-
-        let tc = TypeChecker::new(
-            env!{"x" => ast.t_list(ast.t_str.clone())}
-        );
-
-        let statement = Node::new(ast.list_iter(
-            "i",
-            ast.id("x"),
-            ast.block(&[ast.out(ast.list(&[ast.s("show_text"), ast.id("i")]))], ast.void.clone())
-        ));
-
-        assert_eq!(tc.check_statement(&statement), Err(NotImplemented));
-
-        let statement = Node::new(ast.list_iter(
-            "i",
-            ast.id("x"),
-            ast.block(&[], ast.id("i"))
-        ));
-
-        assert_eq!(
-            tc.check_statement(&statement),
-            Err(Mismatch(ast.t_str.clone(), ast.t_void.clone()))
-        );
-    }
-
-
-    #[test]
-    fn test_map_iter() {
-	let ast = Builder::new();
-        let tc = TypeChecker::new(
-            env!{"x" => ast.map_expr(
-		&(alist!{"x" => ast.t_str.clone()})
-	    )}
-        );
-
-        let statement = Node::new(ast.map_iter(
-            "k",
-            "v",
-            ast.id("x"),
-            ast.block(&[ast.out(ast.list(&[ast.s("show_text"), ast.id("v")]))], ast.void.clone())
-        ));
-
-        assert_eq!(tc.check_statement(&statement), Err(NotImplemented));
-
-        let statement = Node::new(ast.map_iter(
-            "k",
-            "v",
-            ast.id("x"),
-            ast.block(&[ast.expr_for_effect(ast.block(&[], ast.id("v")))], ast.void.clone())
-        ));
-
-        assert_eq!(
-            tc.check_statement(&statement),
-            Err(Mismatch(ast.t_str.clone(), ast.t_void.clone()))
-        );
+	//let ast = Builder::new();
+	// XXX: tbd
     }
 
 

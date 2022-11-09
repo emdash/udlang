@@ -5,8 +5,8 @@ use std::env;
 use udlang::grammar;
 use udlang::parser::parse;
 use udlang::ast::{Builder};
-use udlang::ir::{compile, Value, Shared};
-use udlang::vm::run;
+//use udlang::ir::{compile, Value, Shared};
+//use udlang::vm::run;
 
 use std::io::{
     BufRead,
@@ -32,20 +32,20 @@ fn dump_ast(path: &str) {
 }
 
 
-// Try to compile `path` and print the resulting IR.
-fn dump_ir(path: &str) {
-    println!("{:#?}", compile(path))
-}
+// // Try to compile `path` and print the resulting IR.
+// fn dump_ir(path: &str) {
+//     println!("{:#?}", compile(path))
+// }
 
 
-// Try to decode an ir::Value from a string
-fn decode(_input: std::io::Result<String>) -> Value {
-    // XXX: really implement me
-    Value::List(Shared::new(vec![
-	Value::Str("a".to_string()),
-	Value::Str("b".to_string())
-    ]))
-}
+// // Try to decode an ir::Value from a string
+// fn decode(_input: std::io::Result<String>) -> Value {
+//     // XXX: really implement me
+//     Value::List(Shared::new(vec![
+// 	Value::Str("a".to_string()),
+// 	Value::Str("b".to_string())
+//     ]))
+// }
 
 
 fn main() {
@@ -55,8 +55,8 @@ fn main() {
     match strargs.as_slice() {
 	[_, "--dump-expr"] => dump_expr(),
 	[_, "--dump-ast", path] => dump_ast(path),
-	[_, "--compile", path] => dump_ir(path),
-	[_, path] => run(path, stdin().lock().lines().map(decode)).expect("runtime error"),
+//	[_, "--compile", path] => dump_ir(path),
+//	[_, path] => run(path, stdin().lock().lines().map(decode)).expect("runtime error"),
 	_ => println!("Invalid args. Usage string TBD.")
     };
 }

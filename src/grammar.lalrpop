@@ -21,7 +21,7 @@ pub Program: ast::Program = {
 }
 
 
-// This is to allow compatibility unix shebang syntax.
+// For use as stand-alone shell script
 Shebang: () = r"#.*\n";
 
 
@@ -43,8 +43,8 @@ Script: ast::Program
       <decls:Decl*>
       <i:InputDecl>
       <o:OutputDecl>
-      <body:Statement*>
-    => ast.script(desc, &decls, i, o, &body);
+      <body:Expr>
+    => ast.script(desc, &decls, i, o, body);
 
 
 // Libraries may *not* contain IO declarations.
@@ -66,7 +66,6 @@ LibDecl: StmtNode = {
 Decl: StmtNode = {
     Import,
     FuncDef,
-    TemplateDef,
     TypeDef,
     Let,
 }
@@ -79,7 +78,6 @@ Decl: StmtNode = {
 pub Statement: StmtNode = {
     FuncDef,
     TypeDef,
-    Effect,
     Let,
 }
 
@@ -92,23 +90,7 @@ pub Expr: ExprNode = {
 
 
 // Type Entry Point
-pub Type: TypeNode = TypeMaybe;
-
-
-// Maybe type Union(a, b)
-pub TypeMaybe: TypeNode = {
-    // If we had a Sum type, it would go here, and would look like this.
-    // <a:TypeExpr> "+" <b:TypeCons> => ast.sum(&[a, b]),
-    <TypeUnion>   "?"              => ast.option(<>),
-    TypeUnion,
-}
-
-
-pub TypeUnion: TypeNode = {
-    "|" <TypeUnion> => <>,
-    <a:TypeCons> "|" <b:TypeUnion> => ast.union(&[a, b]),
-    TypeCons,
-}
+pub Type: TypeNode = TypeCons;
 
 
 // Application of a type-level function: a type constructor.
@@ -126,36 +108,12 @@ pub TypeTerm: TypeNode = {
     "Int"                       => ast.t_int.clone(),
     "Float"                     => ast.t_float.clone(),
     "Str"                       => ast.t_str.clone(),
-    "Point"                     => ast.t_point.clone(),
-    "Self"                      => ast.t_this.clone(),
     "Any"                       => ast.t_any.clone(),
     <TypeName>                  => ast.type_name(<>),
-    <Record>                    => <>,
     "{" <Type> "}"              => ast.t_map(<>),
     "(" <Type> ")"              => <>,
     "<" <items:Comma<Type>> ">" => ast.tuple(&items),
     "[" <item:Type> "]"         => ast.t_list(item)
-}
-
-
-// Record types
-pub Record: TypeNode
-    = "{" <members:Semicolon<Member>> "}"
-    => ast.record(&members);
-
-
-// Any field in a record type.
-pub Member: (&'input str, ast::Member) = {
-    "field" <name:Id> ":" <t:Type>
-	=> ast.field(name, t),
-    "field?" <name:Id> ":" <t:Type>
-	=> ast.opt_field(name, t),
-    "method" <name:Id> <args:Arglist> "->" <ret:Type> <body:Expr>
-	=> ast.method(name, &args, ret, body),
-    "const" <name:Id> ":" <t:Type> "=" <value:Expr>
-	=> ast.static_val(name, t, value),
-    "static" <name:Id> <args:Arglist> "->" <ret:Type> <body:Expr>
-	=> ast.static_method(name, &args, ret, body),
 }
 
 
@@ -200,30 +158,10 @@ OutputDecl: TypeNode
     = "output" <Type> ";" => <>;
 
 
-// Syntactic sugar for defining a template function.
-//
-// This is desugared to an extra function arg that is folded into the
-// argument list, allowing `delegate` to be in-scope within the
-// template's body.
-//
-// Templates can be called with the TemplateCall syntax, which
-// consumes a trailing block. This allows defining library functions
-// which feel like control structures.
-TemplateDef: StmtNode
-    = "template" <name:Id> <args:Arglist> "using" <delegate:Id> <body:BlockExpr>
-    => ast.def(name, ast.template(&args, delegate, body));
-
-
 // The only way to introduce a type binding
 TypeDef: StmtNode
     = "type" <name:TypeName> ":" <t:Type> ";"
     => ast.typedef(name, t);
-
-
-// Send a value downstream on the output channel.
-Effect: StmtNode
-    = "out" <value:Expr> ";"
-    => ast.out(value);
 
 
 // Bind a name to a value.
@@ -235,29 +173,8 @@ Let: StmtNode
 // Any expression which is not a block.
 SimpleExpr: ExprNode = {
     Lambda,
-    CondExpr,
     Logic,
 }
-
-
-// An if-else chain in an expression context.
-CondExpr: ExprNode
-    = "if"
-      <first:CondExprClause>
-      <rest:("elif" <CondExprClause>)*>
-      <default:("else" <BlockExpr>)?>
-    => {
-        let mut clauses = vec!{first};
-        clauses.extend(rest);
-        ast.cond(clauses.as_slice(), default.unwrap_or(ast.void.clone()))
-    }
-;
-
-
-// Single clause in an if-else expression.
-CondExprClause: (ExprNode, ExprNode)
-    = "(" <pred: Expr> ")" <body: BlockExpr>
-    => (pred, body);
 
 
 // Single paramater in a function signature
@@ -280,10 +197,10 @@ Lambda: ExprNode = {
 	    ret.unwrap_or(ast.t_any.clone()),
 	    body
 	),
-    <args:Arglist> <ret:("->" <Type>)> <body:BlockExpr>
+    <args:Arglist> <ret:("->" <Type>)?> <body:BlockExpr>
 	=> ast.lambda(
 	    &args,
-	    ret,
+	    ret.unwrap_or(ast.t_any.clone()),
 	    body
 	),
 }
@@ -351,22 +268,11 @@ InvTerm: ExprNode = {
 };
 
 
-// Allow a function call to consume a trailing block in a statement context.
-//
-// Concept Inspired by OpenScad and Ruby. The block just gets folded
-// into the arguments.
-TemplateCall: StmtNode = {
-    <func:Call> "(" <args:Args> ")" <delegate:BlockExpr>
-	=> ast.template_call(func, &args, delegate),
-};
-
-
 // We want indexing and selection to bind before function calls, so that
 // foo.bar(a) parses as ((dot foo bar) a), not (dot foo (bar a))
 Call: ExprNode = {
     <func:Call> "(" <args:Args> ")" => ast.call(func, &args),
     <obj:Call> "." <id:Id> => ast.dot(obj, id),
-    <obj:Call> ".?." <id:Id> => ast.has(obj, id),
     <obj:Call> "[" <e:Expr> "]" => ast.index(obj, e),
     Term
 }
@@ -374,7 +280,6 @@ Call: ExprNode = {
 
 // Literals of any type except lambdas.
 Term: ExprNode = {
-    "self" => ast.this.clone(),
     "in" => ast.in_.clone(),
     Id => ast.id(<>),
     Int => ast.i(<>),

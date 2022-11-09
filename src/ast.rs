@@ -3,7 +3,7 @@
 use std::collections::HashMap;
 use std::rc::Rc;
 use std::cell::RefCell;
-use std::ops::Deref;
+//use std::ops::Deref;
 use std::hash::Hash;
 
 
@@ -109,7 +109,6 @@ pub type Map<T> = HashMap<String, Node<T>>;
 pub type ExprNode = Node<Expr>;
 pub type TypeNode = Node<TypeTag>;
 pub type StmtNode = Node<Statement>;
-pub type MemberNode = Node<Member>;
 pub type Float = ordered_float::OrderedFloat<f64>;
 
 // *** ADT ********************************************************************
@@ -177,8 +176,6 @@ pub enum TypeTag {
     Point,
     // The top type.
     Any,
-    // The `Self` keyword, but we can't call it that
-    This,
     // A bound type name.
     TypeName(String),
     // A type which may be None.
@@ -191,29 +188,11 @@ pub enum TypeTag {
     Map(TypeNode),
     // Internal type for holding a map literal, which converts to map
     // or record, depending on context.
-    MapExpr(Map<TypeTag>),
-    // Same runtime representation as map, but with named fields and
-    // method syntax.
-    Record(AList<Member>),
-    // Anonymous function expressoin.
     Lambda(Seq<TypeTag>, TypeNode),
-    // A union of one or more types.
-    Union(Seq<TypeTag>),
     // Application of a type constructor.
     TypeCons(TypeNode, Seq<TypeTag>),
     // Definition of a type constructor.
     TypeFunc(Seq<String>, TypeNode)
-}
-
-
-// ADT For record fields
-#[derive(Clone, Debug, PartialEq)]
-pub enum Member {
-    Field(TypeNode),
-    OptionField(TypeNode),
-    Method(AList<TypeTag>, TypeNode, ExprNode),
-    StaticValue(TypeNode, ExprNode),
-    StaticMethod(AList<TypeTag>, TypeNode, ExprNode)
 }
 
 
@@ -225,17 +204,13 @@ pub enum Expr {
     Int(i64),
     Float(Float),
     Str(String),
-    Point(Float, Float),
-    This, // the lowercase `self` keyword, but we can't call it that.
-    In, // The `in` keyword.
-    Partial, // The `$` placeholder.
+    In,              // The `in` keyword.
+    Partial,         // The `$` placeholder.
     List(Seq<Expr>),
     Map(Map<Expr>),
     Id(String),
     Dot(ExprNode, String),
-    Has(ExprNode, String),
     Index(ExprNode, ExprNode),
-    Cond(PairSeq<Expr>, ExprNode),
     Block(Seq<Statement>, ExprNode),
     BinOp(BinOp, ExprNode, ExprNode),
     UnOp(UnOp, ExprNode),
@@ -249,8 +224,6 @@ pub enum Expr {
 pub enum Statement {
     Import(Import),
     Export(Export),
-    ExprForEffect(ExprNode),
-    Out(ExprNode),
     Def(String, ExprNode),
     TypeDef(String, TypeNode),
 }
@@ -296,8 +269,7 @@ pub enum Program {
 	decls: Seq<Statement>,
 	input: TypeNode,
 	output: TypeNode,
-	body: Seq<Statement>,
-        output: Expr
+	body: ExprNode
     },
     Library {
 	desc: String,
@@ -317,7 +289,6 @@ pub enum Program {
 pub struct Builder {
     // Singleton values that can be used directly
     pub void:    ExprNode,
-    pub this:    ExprNode,
     pub in_:     ExprNode,
     pub partial: ExprNode,
     pub t_void:  TypeNode,
@@ -328,7 +299,6 @@ pub struct Builder {
     pub t_point: TypeNode,
     pub t_str:   TypeNode,
     pub t_any:   TypeNode,
-    pub t_this:  TypeNode,
     pub exports: RefCell<Vec<Export>>,
     // TBD: hashtables to cache constants, strings, exprs, and
     // statements.
@@ -355,7 +325,6 @@ impl Builder {
     pub fn new() -> Self {
 	Self {
 	    void    : Node::new(Expr::Void),
-	    this    : Node::new(Expr::This),
 	    in_     : Node::new(Expr::In),
 	    partial : Node::new(Expr::Partial),
 	    t_void  : Node::new(TypeTag::Void),
@@ -366,7 +335,6 @@ impl Builder {
 	    t_point : Node::new(TypeTag::Point),
 	    t_str   : Node::new(TypeTag::Str),
 	    t_any   : Node::new(TypeTag::Any),
-	    t_this  : Node::new(TypeTag::This),
 	    exports : RefCell::new(Vec::new()),
 	}
     }
@@ -393,11 +361,6 @@ impl Builder {
 	Node::new(s)
     }
 
-    // Like above, but for record members
-    pub fn member(&self, m: Member) -> MemberNode {
-	Node::new(m)
-    }
-
     // ** Every variant in Statement, Expr, etc gets a short-hand
     // method in this section **
     //
@@ -422,10 +385,6 @@ impl Builder {
 	self.subexpr(Expr::Str(String::from(value)))
     }
 
-    pub fn point(&self, x: Float, y: Float) -> ExprNode {
-	self.subexpr(Expr::Point(x, y))
-    }
-
     pub fn list(&self, value: &[ExprNode]) -> ExprNode {
 	self.subexpr(Expr::List(value.iter().cloned().collect()))
     }
@@ -447,22 +406,8 @@ impl Builder {
 	self.subexpr(Expr::Dot(lhs.clone(), field.to_string()))
     }
 
-    pub fn has(&self, lhs: ExprNode, field: &str) -> ExprNode {
-	self.subexpr(Expr::Has(lhs.clone(), field.to_string()))
-    }
-
     pub fn index(&self, lhs: ExprNode, rhs: ExprNode) -> ExprNode {
 	self.subexpr(Expr::Index(lhs.clone(), rhs))
-    }
-
-    pub fn cond(
-	&self,
-	conds: &[(ExprNode, ExprNode)],
-	// XXX: Maybe use Option<ExprNode> here
-	else_: ExprNode
-    ) -> ExprNode {
-	let conds = conds.iter().cloned().collect();
-	self.subexpr(Expr::Cond(conds, else_))
     }
 
     pub fn block(
@@ -491,11 +436,11 @@ impl Builder {
 	func: ExprNode,
 	args: &[ExprNode],
 	delegate: ExprNode
-    ) -> StmtNode {
+    ) -> ExprNode {
 	let mut args = args.to_vec();
 	// Construct a closure using block and append to arglist.
 	args.push(self.lambda(&[], self.t_void.clone(), delegate));
-	self.expr_for_effect(self.call(func, args.as_slice()))
+	self.call(func, args.as_slice())
     }
 
     pub fn template(
@@ -548,69 +493,8 @@ impl Builder {
 	self.type_(TypeTag::Map(value_type))
     }
 
-    pub fn map_expr(&self, fields: &[(&str, TypeNode)]) -> TypeNode {
-	let fields = fields
-	    .iter()
-	    .map(|field| (field.0.to_string(), field.1.clone()))
-	    .collect();
-	self.type_(TypeTag::MapExpr(fields))
-    }
-
-    pub fn record(&self, members: &[(&str, Member)]) -> TypeNode {
-	let members = members
-	    .iter()
-	    .map(|m| (m.0.to_string(), self.member(m.1.clone())))
-	    .collect();
-	self.type_(TypeTag::Record(members))
-    }
-
-    pub fn field<'a>(&self, name: &'a str, t: TypeNode) -> (&'a str, Member) {
-	(name, Member::Field(t))
-    }
-
-    pub fn opt_field<'a>(
-	&self,
-	name: &'a str,
-	t: TypeNode
-    ) -> (&'a str, Member) {
-	(name, Member::OptionField(t))
-    }
-
-    pub fn method<'a, 'b>(
-	&self,
-	name: &'a str,
-	args: &'b [(&'b str, TypeNode)],
-	ret: TypeNode,
-	body: ExprNode
-    ) -> (&'a str, Member) {
-	(name, Member::Method(alist(args), ret, body))
-    }
-    
-    pub fn static_val<'a>(
-	&self,
-	name: &'a str,
-	t: TypeNode,
-	v: ExprNode
-    ) -> (&'a str, Member) {
-	(name, Member::StaticValue(t, v))
-    }
-
-    pub fn static_method<'a, 'b>(
-	&self,
-	name: &'a str,
-	args: &'b [(&'b str, TypeNode)],
-	ret: TypeNode,
-	body: ExprNode
-    ) -> (&'a str, Member) {
-	(name, Member::StaticMethod(alist(args), ret, body))
-    }
-
     pub fn t_lambda(&self, fields: &[TypeNode], ret: TypeNode) -> TypeNode {
 	self.type_(TypeTag::Lambda(fields.iter().cloned().collect(), ret))
-    }
-
-    pub fn union(&self, ts: &[TypeNode]) -> TypeNode {
-	self.type_(TypeTag::Union(ts.iter().cloned().collect()))
     }
 
     // TBD: TypeCons, TypeFunc... these will probably change from
@@ -618,34 +502,12 @@ impl Builder {
 
     // ** Statements here ***
 
-    pub fn out(&self, expr: ExprNode) -> StmtNode {
-	self.statement(Statement::Out(expr))
-    }
-
     pub fn def(&self, name: &str, expr: ExprNode) -> StmtNode {
 	self.statement(Statement::Def(name.to_string(), expr))
     }
 
     pub fn typedef(&self, name: &str, t: TypeNode) -> StmtNode {
 	self.statement(Statement::TypeDef(name.to_string(), t))
-    }
-
-    // This method is only used in unit tests in parser.rs.
-    //
-    // It is really just a short-hand around cond clauses. It could be
-    // removed, and the tests re-written.x
-    pub fn guard(
-	&self,
-	clauses: &[(ExprNode, ExprNode)],
-	default: Option<StmtNode>
-    ) -> StmtNode {
-	let default = if let Some(default) = default {
-            self.block(&[default], self.void.clone())
-	} else {
-            self.void.clone()
-	};
-
-	self.expr_for_effect(self.cond(clauses, default))
     }
 
     // Export an identifier or type name.
@@ -700,14 +562,14 @@ impl Builder {
 	decls: &[StmtNode],
 	input: TypeNode,
 	output:TypeNode,
-	body: &[StmtNode]
+	body: ExprNode,
     ) -> Program {
 	Program::Script {
 	    desc: desc.to_string(),
 	    decls: decls.to_vec(),
 	    input,
 	    output,
-	    body: body.to_vec()
+	    body: body
 	}
     }
 

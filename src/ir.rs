@@ -802,7 +802,6 @@ impl Compiler {
 	   Import(_)           => Error::not_implemented("module imports"),
 	   Export(_)           => Error::not_implemented("module exports"),
 	   ExprForEffect(expr) => self.compile_expr_for_effect(expr),
-	   Out(expr)           => self.compile_out(expr),
 	   Def(id, val)        => self.compile_def(id, val),
 	   TypeDef(id, t)      => self.compile_typedef(id, t),
 	}

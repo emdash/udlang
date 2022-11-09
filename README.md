@@ -1,54 +1,27 @@
 # uDLang #
 
 uDLang aims to be a small, statically typed, pure functional language
-Syntax derives from C-family languages, while semantics derive from
-ML-family languages.
+that reads like JavaScript or TypeScript. Syntax derives from C-family
+languages, while semantics derive from ML-family languages.
 
-The reference implementation is written in Rust and aims to be a
-practical runtime for command-line scripting and application
-embedding. It consists of a shared library and a set of command-line
-tools. Design focuses on is on low interpreter overhead with minimal
-dependencies. It is based on graph reduction.
+Fundamentally impure concepts -- namely, mutable state and IO -- are
+simply omitted from the language. The focus is on providing *pure
+sublanguage* which may be easily embedded within an impure *host
+environment*.
 
-As a library, uDLang aims to be principled alternative to scripting
-languages such as Lua, as well as configuration languages such as
-Yaml. As a command-line tool, uDLang also aims to be a principled
-alternative to awk, jq, perl, and python.
+The reference implementation is in Rust, and aims to be a practical
+runtime library and command-line interpreter. Design goals include:
+low runtime overhead, fast startup time, and minimal dependencies.
 
-## A few miminal examples
+## Some Examples
 
-### Fibonacci
+### Structured Data Example
 
-```
-// fibonacci.us
+Let's imagine that we have some temperature data in a file called
+`temps.json`, captured in celcius.
 
-version 0.2;
-script "Calculate Nth Fibonacci Number";
-input  Str;
-output Result<Str, Str>;
-
-func fib(n: U32) -> U32 {
-    match (n) {
-        case 0: 1;
-        case 1: 1;
-        case _: fib(n - 1) + fib(n - 2);
-    }
-}
-
-try {
-    Ok("${fib(U32.parse(in))}\n")
-} catch (U32::ParseError) {
-    Err("Could not parse input!")
-} catch (U32::Overflow) {
-    Err("Result wider than 32 bits!")
-}
-```
-
-### Records Example
-
-Let's imagine that we have series of temperature data, captured in
-celcius. We want to convert it to farenheit for presentation. The data
-is a stream of JSON objects, separated by newlines:
+We want to convert it to farenheit for presentation. The data is a
+stream of JSON objects, separated by newlines:
 
 ```
 {"time": 0, "temp": 4.5}
@@ -57,36 +30,94 @@ is a stream of JSON objects, separated by newlines:
 {"time": 3, "temp": 7.8}
 {"time": 4, "temp": 9.5}
 {"time": 5, "temp": 11.1}
-...
 ```
 
 Script:
 
 ```
-// temp_convert.us
+// every script must begin with some metadata
 version 0.2;
 script  "Data processing example";
 
-type   Sample: {"time": Float, "temp": Float};
-input  Sample;
-output Sample;
+// SData is any structured data interconvertible with JSON.
+input  SData;
+output SData;
 
-func convert(t: Float) -> Float {
-  (9.0 * (t as Float) / 5.0 + 32.0)
+func convert(t: Float) -> Float = 9.0 * t / 5.0 + 32.0;
+
+// convert samples which match the schema, leave others unchanged.
+match (in) {
+  case {time, temp}: {time, temp: convert(temp)};
+  case $:            in;
 }
 
-match (in) {
-  case {"time": t, "temp": k}: {"time": t, "temp": convert(k)};
+```
+Run this as follows:
+
+```
+udlang --mode streaming --input json:newline --output json < temps.json
+```
+
+...which yields the following output:
+
+```
+{"time": 0, "temp": 40.1}
+{"time": 1, "temp": 40.46}
+{"time": 2, "temp": 43.16}
+{"time": 3, "temp": 46.04}
+{"time": 4, "temp": 49.1}
+{"time": 5, "temp": 51.98}
+```
+
+### Fibonacci, with error handling
+
+Error handling is based on static exceptions. 
+
+```
+version 0.2;
+script  "Calculate Nth Fibonacci Number";
+input   Str;
+output  Str;
+
+// Addition of `U32` is `U32!`. Howver, Since the return type is also `U32!`, no `try` block is necessary.
+func fib(n: U32) -> U32! = match (n) {
+  // the plain value `1` may be used here, as U32 coerces to U32!
+  case 0: 1;
+  case 1: 1;
+  case $: fib(n - 1) + fib(n - 2)
+};
+
+// The return type of `U32::parse()` is also `U32!`.
+// Since set of handlers is exhaustive, the script is total and the output is
+// type Str.
+try {
+  // within the `try`, fallible types appear infallible when handler matching the exceptions they throw.
+  let result = fib(U32::parse(in));
+  "${result}\n"
+} catch (U32::ParseError) {
+  "Error: Could not parse ${in} as an integer!"
+} catch (U32::Overflow) {
+  "Error: Result is larger than 32 bits!"
 }
 ```
 
-See [the manual](manual.md) for more examples.
+Run this as follows:
+
+```
+udlang --mode streaming --input raw:newline --output raw
+```
+
+With no input file given, `udlang` will use readline for input.
+
+
+See [the manual](manual.md), and [examples directory][examples/] for
+more examples for more.
 
 ## Why uDLang? ##
 
 This is my attempt to design the pure functional language that I wish
-had existed 10 years ago: ML-flavored semantics,
-JavaScript-flavored syntax, and the flexibility of awk and Lua.
+had existed 10 years ago: ML-flavored semantics, JavaScript-flavored
+syntax, and the flexibility of awk and Lua.
 
 uDLang began as a DSL for
 [uDash](https://github.com/emdash/udashboard), but has since become an
@@ -130,18 +161,6 @@ Anticipated Uses:
 - command-line batch data processing
 - application configuration, scripting, and / or queries.
 - a meta-language for custom DSLs.
-
-Sources of Inspiration
-
-- FlowJS / TypeScript, for the syntax
-- ML-family languages: ML, Haskell, Miranda, Clean
-- The Elm project.
-- Rust, the implementation language.
-- [Koka](https://koka-lang.github.io/koka/doc/index.html) -- a case of
-  convergent evolution. Koka syntax is similar to uDLang, despite
-  being an unrelated project.
-- The nix language.
-- Erlang, for its bitstrings.
 
 ## Purity and IO
 
@@ -221,8 +240,8 @@ Binary Framing Formats:
 
 #### Embedded
 
-When uDLang is used as a library, with your application responsible for
-all IO.
+When uDLang is used as a library, with your application responsible
+for all IO.
 
 The embedding API is dead simple, because every udlang script is
 essentially a pure function. You simply *call* your script on an input
