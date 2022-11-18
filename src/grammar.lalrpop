@@ -28,7 +28,7 @@ Shebang: () = r"#.*\n";
 // This is hard-coded for now. Later on this will be used to
 // disambiguate or warn about incompatible languge versions.
 VersionDecl: ()
-  = "version" "0.1-pre_mvp" ";";
+  = "version" "0.2" ";";
 
 
 // Scripts must declare their input and output types.

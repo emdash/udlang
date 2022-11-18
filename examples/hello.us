@@ -1,9 +1,9 @@
 #! udlang
 
-version 0.1-pre_mvp;
+version 0.2;
 script "Hello world, in uDLang";
 
 input  Str;
 output Str;
 
-out "Hello, " + in;
+"Hello, " + in

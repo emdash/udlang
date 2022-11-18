@@ -3,7 +3,6 @@
 use std::collections::HashMap;
 use std::rc::Rc;
 use std::cell::RefCell;
-//use std::ops::Deref;
 use std::hash::Hash;
 
 
@@ -430,7 +429,7 @@ impl Builder {
     pub fn call(&self, callee: ExprNode, args: &[ExprNode]) -> ExprNode {
 	self.subexpr(Expr::Call(callee, args.iter().cloned().collect()))
     }
-    
+
     pub fn template_call(
 	&self,
 	func: ExprNode,
@@ -514,7 +513,6 @@ impl Builder {
     pub fn export(&self, name: &str) -> StmtNode {
 	self.statement(Statement::Export(Export::Name(name.to_string())))
     }
-
 
     // Wrap the underlying decl as an export.
     pub fn export_decl(&self, decl: StmtNode) -> StmtNode {

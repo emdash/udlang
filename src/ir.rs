@@ -720,7 +720,6 @@ impl Compiler {
 
     // Try to convert the AST to IR.
     pub fn compile_program(&mut self, prog: Program) -> Result<IR> {
-	
 	eprintln!("compile program");
 
 	Ok(match prog {
@@ -738,9 +737,8 @@ impl Compiler {
 	decls: Seq<Shared<Statement>>,
 	input: TypeNode,
 	output: TypeNode,
-	body: Seq<Shared<Statement>>
+	body: ExprNode
     ) -> Result<Executable> {
-	
 	eprintln!("compile script");
 
 	self.blocks.push(Vec::new());
@@ -749,9 +747,7 @@ impl Compiler {
 	}
 
 	self.blocks.push(Vec::new());
-	for statement in body {
-	    self.compile_statement(&statement)?;
-	}
+        self.compile_expr(&body)?;
 
 	let block1 = Block {
 	    code: self.blocks[1].clone(),
@@ -779,7 +775,6 @@ impl Compiler {
 	desc: String,
 	_decls: Vec<StmtNode>
     ) -> Result<Module> {
-	
 	eprintln!("compile library");
 
 	/* 
@@ -795,29 +790,13 @@ impl Compiler {
     // Try to compile a statement into IR.
     pub fn compile_statement(&mut self, statement: &StmtNode) -> Result<()> {
 	use ast::Statement::*;
-		
 	eprintln!("compile statement: {:?}", statement);
-
 	match statement.deref() {
 	   Import(_)           => Error::not_implemented("module imports"),
 	   Export(_)           => Error::not_implemented("module exports"),
-	   ExprForEffect(expr) => self.compile_expr_for_effect(expr),
 	   Def(id, val)        => self.compile_def(id, val),
 	   TypeDef(id, t)      => self.compile_typedef(id, t),
 	}
-    }
-
-    // Compile a statement which just invokes an expression for its effects.
-    pub fn compile_expr_for_effect(&mut self, expr: &ExprNode) -> Result<()> {
-	eprintln!("compile expr_for_effect");
-	self.compile_expr(expr)
-    }
-
-    // Try to compile an ouptut instruction.
-    pub fn compile_out(&mut self, expr: &ExprNode) -> Result<()> {
-	eprintln!("compile out {:?}", expr);
-	self.compile_expr(expr)?;
-	self.emit(Instruction::Out)
     }
 
     // Try to compile a lexical binding
@@ -842,82 +821,6 @@ impl Compiler {
 	Error::not_implemented("local typedefs")
     }
 
-    // Try to compile a for loop over a collection
-    pub fn compile_iter(
-	&mut self,
-	itervars: &[&str],
-	collection: &ExprNode,
-	body: &ExprNode
-    ) -> Result<()> {
-	// First, compile the collection expression
-	self.compile_expr(collection)?;
-
-	// Add type information to the plain values. We just treat
-	// these as Any for now.
-	//
-	// XXX: this should be derived from the underlying collection
-	// somehow, or else explicitly included in the grammar.
-	let any = Shared::new(ast::TypeTag::Any);
-	let args = itervars
-	    .iter()
-	    .cloned()
-	    .map(|iv| (iv.to_string(), any.clone()))
-	    .collect::<Vec<(String, TypeNode)>>();
-	
-	self.compile_lambda(
-	    // The given iterator ids are converted to the lambda args
-	    //
-	    // XXX: the type should be the element type of the
-	    // collection, whatever that ends up being.
-	    args.as_slice(),
-	    // XXX: For now we only support the statement form of iteration.
-	    // But we have to eventually support the expression form.
-	    &Shared::new(ast::TypeTag::Void),
-	    // Body is just passed as given.
-	    body
-	)?;
-	self.emit(Instruction::Call(CallType::ForEach))
-	    
-    }
-
-    // Compile the capture expression of a subjunctive statement.
-    //
-    // This wraps the expression in capture-stack instructions to
-    // expose the effects as data.
-    pub fn compile_capture_expr(&mut self, expr: &ExprNode) -> Result<()> {
-	self.emit(Instruction::Capture(CaptureOp::Push))?;
-	// XXX: Assumption here: expr has type void
-	self.compile_expr(expr)?;
-	self.emit(Instruction::Capture(CaptureOp::Pop))
-    }
-
-    // Try to copile a subjunctive
-    pub fn compile_subjunctive(
-	&mut self,
-	cond: &ExprNode,
-	branch: &ExprNode,
-	leaf: &ExprNode
-    ) -> Result<()> {
-	self.compile_capture_expr(cond)?;
-	let elipsis = self.compile_atom("...");
-	// XXX: This will store into the current scope, which means at most
-	// one subjunctive per scope, or we'll get redefinition errors
-	// at runtime..
-	//
-	// This really should be compiled like a block, i.e. as an
-	// IIFE, so that the ... is bound in a sub-scope.
-	self.emit(
-	    /* XXX: assumption: ...  is invalid identifier, therefore,
-	    will never collide with a valid identifier. */
-	    Instruction::Store(elipsis)
-	)?;
-	self.compile_variable_reference("...")?;
-	self.emit(Instruction::Capture(CaptureOp::Test))?;
-	self.compile_basic_block(branch)?;
-	self.compile_basic_block(leaf)?;
-	self.emit(Instruction::Call(CallType::IfElse))
-    }
-
     // Dispatch to each expression variant.
     //
     // XXX: everything in this class could take nodes by move, the
@@ -939,17 +842,13 @@ impl Compiler {
 	    Int(i)                  => self.compile_const(Value::Int(*i)),
 	    Float(f)                => self.compile_const(Value::Float(*f)),
 	    Str(s)                  => self.compile_const(Value::Str(s.clone())),
-	    Point(x, y)             => self.compile_const(Value::Point(Shared::new((*x, *y)))),
-	    This                    => Error::not_implemented("self"),
 	    In                      => self.emit(Instruction::In),
 	    Partial                 => self.emit(Instruction::Placeholder),
 	    List(items)             => self.compile_list(items),
 	    Map(items)              => self.compile_map(items),
 	    Id(id)                  => self.compile_variable_reference(id),
 	    Dot(_, _)               => Error::not_implemented("fixed index"),
-	    Has(_, _)               => Error::not_implemented("member test"),
 	    Index(_, _)             => Error::not_implemented("computed index"),
-	    Cond(conds, default)    => self.compile_conds(conds, default),
 	    Block(_, _)             => self.compile_block_expr(expr),
 	    BinOp(op, l, r)         => self.compile_bin(*op, l, r),
 	    UnOp(op, operand)       => self.compile_un(*op, operand),
@@ -1230,13 +1129,13 @@ mod tests {
     fn assert_file(path: &str, expected: IR) {
 	assert_eq!(compile(path), expected)
     }
-    
+
     #[test]
     pub fn test_hello() {
 	let ast = ast::Builder::new();
 	use Instruction::*;
 	use BinOp::*;
-	
+
 	assert_file(
 	    "examples/hello.us",
 	    IR::Executable(Executable {
@@ -1249,7 +1148,7 @@ mod tests {
 			args: vec![],
 			rets: 0,
 		    }, Block {
-			code: vec![Const(Value::Str("Hello, ".to_string())), In, Bin(Add), Out],
+			code: vec![Const(Value::Str("Hello, ".to_string())), In, Bin(Add)],
 			args: vec![],
 			rets: 0,
 		    }

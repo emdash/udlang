@@ -575,7 +575,7 @@ mod tests {
 	let ast = Builder::new();
 	assert_prog(
 	    r#"
-            version 0.1-pre_mvp;
+            version 0.2;
             script "Minimal Import Test";
             import foo;
             input Str;
@@ -597,7 +597,7 @@ mod tests {
 	let ast = Builder::new();
 	assert_prog(
 	    r#"
-            version 0.1-pre_mvp;
+            version 0.2;
             script "Minimal Import Test";
             import foo._;
             input Str;
@@ -619,7 +619,7 @@ mod tests {
 	let ast = Builder::new();
 	assert_prog(
 	    r#"
-            version 0.1-pre_mvp;
+            version 0.2;
             script "Minimal Import Test";
             import foo.*;
             input Str;
@@ -641,7 +641,7 @@ mod tests {
 	let ast = Builder::new();
 	assert_prog(
 	    r#"
-            version 0.1-pre_mvp;
+            version 0.2;
             script "Minimal Import Test";
             import foo.bar;
             input Str;
@@ -663,7 +663,7 @@ mod tests {
 	let ast = Builder::new();
 	assert_prog(
 	    r#"
-            version 0.1-pre_mvp;
+            version 0.2;
             script "Minimal Import Test";
             import foo.bar as baz;
             input Str;
@@ -685,7 +685,7 @@ mod tests {
 	let ast = Builder::new();
 	assert_prog(
 	    r#"
-            version 0.1-pre_mvp;
+            version 0.2;
             script "Minimal Import Test";
             import bands.{
               _,
@@ -725,7 +725,7 @@ mod tests {
 	let ast = Builder::new();
 	assert_prog(
 	    r#"#! foo bar baz"
-            version 0.1-pre_mvp;
+            version 0.2;
             script "Test Shebang";
             input Str;
             output [Float];
@@ -746,7 +746,7 @@ mod tests {
 	let ast = Builder::new();
 	assert_prog(
 	    r#"#! foo bar baz"
-            version 0.1-pre_mvp;
+            version 0.2;
             script "Test Comments";
             // Here's a short comment.
             input Str;
