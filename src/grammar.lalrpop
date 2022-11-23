@@ -36,8 +36,6 @@ VersionDecl: ()
 // Scripts cannot export type, value, or function definitions.
 //
 // The IO declarations divide the header from the body of a script.
-//
-// Side effects are allowed only within the script body.
 Script: ast::Program
     = "script" <desc:Str> ";"
       <decls:Decl*>
@@ -49,13 +47,13 @@ Script: ast::Program
 
 // Libraries may *not* contain IO declarations.
 //
-// Libraries must contain only type definitions, value definitions,
-// function definitions, or exports declarations.
+// Libraries contain definitions, which may or may not be exported.
 Library: ast::Program
     = "lib" <desc:Str> ";" <decls:LibDecl*>
     => ast.library(desc, &decls);
 
 
+// Library decls may contain be public (via export) or private (default)
 LibDecl: StmtNode = {
     Decl,
     Export
@@ -71,10 +69,7 @@ Decl: StmtNode = {
 }
 
 
-// This is what is allowed in a "primary" statement context. A
-// "primary" statement context is one of the following:
-// - inside a block, before the yielding expression.
-// - a script body.
+// What is allowed in a "primary" statement context.
 pub Statement: StmtNode = {
     FuncDef,
     TypeDef,
@@ -101,18 +96,13 @@ pub TypeCons: TypeNode = {
 }
 
 
-// A primitive type, or a grouping of subtypes.
+// Type-level terms
 pub TypeTerm: TypeNode = {
     "Void"                      => ast.t_void.clone(),
-    "Bool"                      => ast.t_bool.clone(),
-    "Int"                       => ast.t_int.clone(),
-    "Float"                     => ast.t_float.clone(),
-    "Str"                       => ast.t_str.clone(),
     "Any"                       => ast.t_any.clone(),
     <TypeName>                  => ast.type_name(<>),
-    "{" <Type> "}"              => ast.t_map(<>),
     "(" <Type> ")"              => <>,
-    "<" <items:Comma<Type>> ">" => ast.tuple(&items),
+    <name: TypeName> "(" <items:Comma<Type>> ")" => ast.type_cons(name, &items),
     "[" <item:Type> "]"         => ast.t_list(item)
 }
 
@@ -160,7 +150,7 @@ OutputDecl: TypeNode
 
 // The only way to introduce a type binding
 TypeDef: StmtNode
-    = "type" <name:TypeName> ":" <t:Type> ";"
+    = "type" <name:TypeName> "{" <t:Type> "}" ";"
     => ast.typedef(name, t);
 
 
@@ -182,7 +172,7 @@ Param: (&'input str, TypeNode)
     = <name:Id> ":" <t:Type>
     => (name, t);
 
- 
+
 // The argument list of a function signature
 Arglist: Vec<(&'input str, TypeNode)>
     = "(" <args:Comma<Param>> ")"

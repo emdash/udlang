@@ -160,38 +160,24 @@ pub enum UnOp {
 }
 
 
-// ADT for types
+// ADT for type-level terms
 #[derive(Clone, Debug, PartialEq)]
 pub enum TypeTag {
     // The bottom type
     Void,
     // The unit type
     None,
-    // Primitive Types
-    Bool,
-    Int,
-    Float,
-    Str,
-    Point,
     // The top type.
     Any,
+    // Primitive Types
+    Int,
+    Char,
     // A bound type name.
     TypeName(String),
-    // A type which may be None.
-    Option(TypeNode),
-    // Fixed-sized list of heterogenous types.
-    Tuple(Seq<TypeTag>),
-    // Variable-length list of single type.
-    List(TypeNode),
-    // Maps string keys to values of a single type.
-    Map(TypeNode),
-    // Internal type for holding a map literal, which converts to map
-    // or record, depending on context.
+    // A function value
     Lambda(Seq<TypeTag>, TypeNode),
     // Application of a type constructor.
-    TypeCons(TypeNode, Seq<TypeTag>),
-    // Definition of a type constructor.
-    TypeFunc(Seq<String>, TypeNode)
+    TypeCons(TypeNode, Seq<TypeTag>)
 }
 
 
@@ -199,10 +185,8 @@ pub enum TypeTag {
 #[derive(Clone, Debug, PartialEq)]
 pub enum Expr {
     Void,
-    Bool(bool),
     Int(i64),
-    Float(Float),
-    Str(String),
+    Char(char),
     In,              // The `in` keyword.
     Partial,         // The `$` placeholder.
     List(Seq<Expr>),
@@ -224,7 +208,7 @@ pub enum Statement {
     Import(Import),
     Export(Export),
     Def(String, ExprNode),
-    TypeDef(String, TypeNode),
+    TypeDef(String, Vec<(String, Vec<TypeNode>)>)
 }
 
 
